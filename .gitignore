@@ -4,3 +4,5 @@ client/node_modules
 client/.env
 server/.env
 .repopackignore
+repopack-output.txt
+
