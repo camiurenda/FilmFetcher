@@ -4,7 +4,7 @@ export const useAuth = () => {
   const { loginWithRedirect, logout, user, isAuthenticated, isLoading } = useAuth0();
   
   console.log('Redirect URI:', process.env.REACT_APP_AUTH0_REDIRECT_URI);
-//
+//comentario test
   const handleLogin = () => loginWithRedirect();
   const handleLogout = () => logout({ returnTo: 'http://localhost:3000/callback' });
 
