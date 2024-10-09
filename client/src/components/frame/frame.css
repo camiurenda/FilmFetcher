@@ -1,0 +1,5 @@
+.ant-menu-horizontal .ant-menu-item:hover {
+    background-color: #1890ff; /* Cambia el color de fondo al pasar el mouse */
+    color: white; /* Cambia el color del texto */
+  }
+  
