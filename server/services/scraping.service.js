@@ -120,7 +120,7 @@ class ScrapingService {
   
     while (retryCount < maxRetries) {
       try {
-        const promptContent = `Analiza el siguiente texto extraído de un sitio web de cine o teatro y extrae información sobre las proyecciones unicamente de cine:
+        const promptContent = `Analiza el siguiente texto extraído de un sitio web de cine o teatro y extrae información sobre las proyecciones únicamente de cine:
   
         ${extractedInfo}
   
@@ -138,7 +138,7 @@ class ScrapingService {
             }
           ]
         }
-        Si no encuentras información para algún campo, infierelo de internet con maxima precision. Devuelve SOLO el JSON en propercase, sin ningún otro texto o formato adicional.`;
+        Si no encuentras información para algún campo, infierelo de internet con máxima precisión. Devuelve SOLO el JSON en propercase, sin ningún otro texto o formato adicional.`;
   
         console.log('Prompt enviado a OpenAI:');
         console.log(promptContent);
@@ -192,7 +192,9 @@ class ScrapingService {
           throw new Error(`No se pudo parsear la respuesta de OpenAI: ${parseError.message}`);
         }
         
-        if (!aiResponse.proyecciones || !Array.isArray(aiResponse.proyecciones)) {
+        // Modificación: Verificar si la propiedad es 'proyecciones' o 'Proyecciones'
+        const proyecciones = aiResponse.proyecciones || aiResponse.Proyecciones;
+        if (!proyecciones || !Array.isArray(proyecciones)) {
           console.error('Respuesta de OpenAI no contiene proyecciones válidas:', aiResponse);
           throw new Error('Respuesta de OpenAI no contiene proyecciones válidas');
         }
@@ -221,14 +223,16 @@ class ScrapingService {
   }
 
   processAIResponse(aiResponse, siteId) {
-    return aiResponse.proyecciones.map(event => ({
-      nombrePelicula: event.nombre,
-      fechaHora: new Date(event.fechaHora),
-      director: event.director || 'No especificado',
-      genero: event.genero || 'No especificado',
-      duracion: event.duracion ? parseInt(event.duracion) : 0,
-      sala: event.sala || 'No especificada',
-      precio: event.precio ? parseFloat(event.precio) : 0,
+    // Modificación: Verificar si la propiedad es 'proyecciones' o 'Proyecciones'
+    const proyecciones = aiResponse.proyecciones || aiResponse.Proyecciones;
+    return proyecciones.map(event => ({
+      nombrePelicula: event.nombre || event.Nombre,
+      fechaHora: new Date(event.fechaHora || event.FechaHora),
+      director: event.director || event.Director || 'No especificado',
+      genero: event.genero || event.Genero || 'No especificado',
+      duracion: event.duracion || event.Duracion ? parseInt(event.duracion || event.Duracion) : 0,
+      sala: event.sala || event.Sala || 'No especificada',
+      precio: event.precio || event.Precio ? parseFloat(event.precio || event.Precio) : 0,
       sitio: siteId,
     })).filter(projection => 
       projection.nombrePelicula && 
@@ -320,7 +324,6 @@ class ScrapingService {
     console.log("Obteniendo schedule de scraping...");
     const sites = await Site.find({ activoParaScraping: true });
     const now = new Date();
-    
     let allScheduledScrapings = [];
 
     sites.forEach(site => {

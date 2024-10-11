@@ -138,25 +138,20 @@ const ViewProjections = () => {
       render: (fechaHora) => moment(fechaHora).format('YYYY-MM-DD HH:mm'),
     },
     {
-      title: 'Director',
-      dataIndex: 'director',
-      key: 'director',
+      title: 'Cine',
+      dataIndex: ['sitio', 'nombre'],
+      key: 'cine',
     },
     {
-      title: 'Género',
-      dataIndex: 'genero',
-      key: 'genero',
+      title: 'Sala',
+      dataIndex: 'sala',
+      key: 'sala',
     },
     {
       title: 'Duración',
       dataIndex: 'duracion',
       key: 'duracion',
       render: (duracion) => `${duracion} min`,
-    },
-    {
-      title: 'Sala',
-      dataIndex: 'sala',
-      key: 'sala',
     },
     {
       title: 'Precio',

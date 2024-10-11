@@ -20,17 +20,28 @@ const ViewSite = () => {
 
   const fetchSites = async () => {
     try {
+      console.log('Iniciando fetchSites...');
       const response = await axios.get('http://localhost:5000/api/sites');
-      setSites(response.data);
+      console.log('Respuesta del servidor:', response.data);
+
+      // Asegúrate de que todos los sitios tengan un valor válido para tipoCarga
+      const sitesWithDefaultTipoCarga = response.data.map(site => ({
+        ...site,
+        tipoCarga: site.tipoCarga || 'N/A'
+      }));
+
+      console.log('Sitios procesados:', sitesWithDefaultTipoCarga);
+      setSites(sitesWithDefaultTipoCarga);
     } catch (error) {
-      console.error('Error fetching sites:', error);
-      message.error('Error al cargar los sitios');
+      console.error('Error en fetchSites:', error);
+      message.error('Error al cargar los sitios. Por favor, intenta de nuevo más tarde.');
     }
   };
 
   useEffect(() => {
     fetchSites();
   }, []);
+
 
   const handleDisable = async (id) => {
     confirm({
@@ -134,7 +145,7 @@ const ViewSite = () => {
         }
         return (
           <Tag color={color} key={tipo}>
-            {tipo.toUpperCase()}
+            {tipo ? tipo.toUpperCase() : 'N/A'}
           </Tag>
         );
       },
@@ -144,10 +155,16 @@ const ViewSite = () => {
       dataIndex: 'tipoCarga',
       key: 'tipoCarga',
       render: (tipoCarga) => {
-        // Manejo de undefined
-        const tipo = tipoCarga || 'N/A';
+        // Manejo seguro de tipoCarga
+        const tipo = (tipoCarga && typeof tipoCarga === 'string') ? tipoCarga.trim() : 'N/A';
+        let color = 'default';
+        if (tipo.toLowerCase() === 'scraping') {
+          color = 'blue';
+        } else if (tipo.toLowerCase() === 'manual') {
+          color = 'green';
+        }
         return (
-          <Tag color={tipo === 'scraping' ? 'blue' : (tipo === 'manual' ? 'green' : 'default')}>
+          <Tag color={color}>
             {tipo.toUpperCase()}
           </Tag>
         );
@@ -190,10 +207,10 @@ const ViewSite = () => {
     <AuthWrapper>
       <div style={{ padding: '24px', background: '#141414', borderRadius: '8px', overflow: 'auto' }}>
         <Title level={2} style={{ color: '#fff', marginBottom: '24px' }}>Ver Sitios</Title>
-        
+
         <div style={{ position: 'relative' }}>
-          <Button 
-            type="primary" 
+          <Button
+            type="primary"
             onClick={showAddModal}
             style={{
               position: 'absolute',
@@ -204,15 +221,15 @@ const ViewSite = () => {
           >
             Agregar Sitio
           </Button>
-          
-          <Table 
-            columns={columns} 
-            dataSource={sites} 
+
+          <Table
+            columns={columns}
+            dataSource={sites}
             rowKey="_id"
             scroll={{ x: 'max-content' }}
-            pagination={{ 
+            pagination={{
               responsive: true,
-              showSizeChanger: true, 
+              showSizeChanger: true,
               showQuickJumper: true,
             }}
           />
@@ -252,9 +269,9 @@ const ViewSite = () => {
               </Select>
             </Form.Item>
             {editingTipoCarga === 'scraping' && (
-              <Form.Item 
-                name="frecuenciaActualizacion" 
-                label="Frecuencia de Actualización" 
+              <Form.Item
+                name="frecuenciaActualizacion"
+                label="Frecuencia de Actualización"
                 rules={[{ required: true, message: 'Por favor seleccione la frecuencia de actualización' }]}
               >
                 <Select>
@@ -306,15 +323,15 @@ const ViewSite = () => {
                 <Select.Option value="manual">Carga Manual</Select.Option>
               </Select>
             </Form.Item>
-            <Form.Item 
-              noStyle 
+            <Form.Item
+              noStyle
               shouldUpdate={(prevValues, currentValues) => prevValues.tipoCarga !== currentValues.tipoCarga}
             >
-              {({ getFieldValue }) => 
+              {({ getFieldValue }) =>
                 getFieldValue('tipoCarga') === 'scraping' && (
-                  <Form.Item 
-                    name="frecuenciaActualizacion" 
-                    label="Frecuencia de Actualización" 
+                  <Form.Item
+                    name="frecuenciaActualizacion"
+                    label="Frecuencia de Actualización"
                     rules={[{ required: true, message: 'Por favor seleccione la frecuencia de actualización' }]}
                   >
                     <Select>

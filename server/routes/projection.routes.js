@@ -34,7 +34,7 @@ router.post('/load-from-image', async (req, res) => {
 // Obtener todas las proyecciones habilitadas
 router.get('/', async (req, res) => {
   try {
-    const projections = await Projection.find({ habilitado: true });
+    const projections = await Projection.find({ habilitado: true }).populate('sitio', 'nombre');
     res.status(200).json(projections);
   } catch (error) {
     res.status(500).json({ message: error.message });
