@@ -4,6 +4,7 @@ import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import API_URL from '../../config/api';
 
 const { Title } = Typography;
 const { confirm } = Modal;
@@ -20,7 +21,7 @@ const ViewSite = () => {
 
   const fetchSites = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/sites');
+      const response = await axios.get(`${API_URL}/api/sites`);
       setSites(response.data);
     } catch (error) {
       console.error('Error al obtener sitios:', error);
@@ -38,7 +39,7 @@ const ViewSite = () => {
       content: 'Esta acción ocultará el sitio de la lista principal y lo desactivará para el scraping.',
       onOk: async () => {
         try {
-          await axios.put(`http://localhost:5000/api/sites/disable/${id}`);
+          await axios.put(`${API_URL}/api/sites/disable/${id}`);
           message.success('Sitio deshabilitado correctamente');
           fetchSites(); // Actualizar la lista después de deshabilitar
         } catch (error) {
@@ -71,7 +72,7 @@ const ViewSite = () => {
       if (updatedValues.tipoCarga === 'manual') {
         delete updatedValues.frecuenciaActualizacion;
       }
-      const response = await axios.put(`http://localhost:5000/api/sites/${editingSite._id}`, {
+      const response = await axios.put(`${API_URL}/api/sites/${editingSite._id}`, {
         ...updatedValues,
         activoParaScraping: updatedValues.tipoCarga === 'scraping'
       });
@@ -86,7 +87,7 @@ const ViewSite = () => {
 
   const handleAdd = async (values) => {
     try {
-      const response = await axios.post('http://localhost:5000/api/sites/add', values);
+      const response = await axios.post(`${API_URL}/api/sites/add`, values);
       message.success('Sitio agregado correctamente');
       setIsAddModalVisible(false);
       fetchSites(); // Actualizar la lista después de agregar
