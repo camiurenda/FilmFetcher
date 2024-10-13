@@ -16,7 +16,7 @@ const Addsites = () => {
 
   useEffect(() => {
     if (user) {
-      form.setFieldsValue({ usuarioCreador: user.email, tipoCarga: 'scraping' });
+      form.setFieldsValue({ usuarioCreador: user.email });
     }
   }, [user, form]);
 

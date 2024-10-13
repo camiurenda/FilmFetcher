@@ -18,10 +18,12 @@ const ViewProjections = () => {
   const [manualLoadForm] = Form.useForm();
   const [form] = Form.useForm();
   const navigate = useNavigate();
+  const [mostrarAnteriores, setMostrarAnteriores] = useState(false);
 
   const fetchProjections = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/projections');
+      const endpoint = mostrarAnteriores ? '/api/projections/proyecciones-anteriores' : '/api/projections/proyecciones-actuales';
+      const response = await axios.get(`http://localhost:5000${endpoint}`);
       setProjections(response.data);
     } catch (error) {
       console.error('Error fetching projections:', error);
@@ -32,7 +34,7 @@ const ViewProjections = () => {
   useEffect(() => {
     fetchProjections();
     fetchSitiosManual();
-  }, []);
+  }, [mostrarAnteriores]);
 
   const handleDisable = async (id) => {
     confirm({
@@ -64,7 +66,7 @@ const ViewProjections = () => {
       });
       message.success('Proyecciones cargadas correctamente desde la imagen');
       setIsManualLoadModalVisible(false);
-      fetchProjections(); // Actualizar la lista de proyecciones
+      fetchProjections();
     } catch (error) {
       console.error('Error al cargar proyecciones desde imagen:', error);
       message.error('Error al cargar proyecciones desde la imagen');
@@ -125,6 +127,51 @@ const ViewProjections = () => {
     }
   };
 
+  const handleExportCSV = (tipo) => {
+    axios.get(`http://localhost:5000/api/projections/exportar-csv?tipo=${tipo}`, {
+      responseType: 'blob',
+    })
+      .then((response) => {
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `cartelera_${tipo}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      })
+      .catch((error) => {
+        console.error('Error al exportar CSV:', error);
+        message.error('Error al exportar la cartelera a CSV');
+      });
+  };
+
+  const showExportModal = () => {
+    confirm({
+      title: '¿Qué tipo de exportación deseas realizar?',
+      content: 'Puedes exportar solo las proyecciones actuales o todas las proyecciones.',
+      okText: 'Exportar Actual',
+      cancelText: 'Exportar Todo',
+      onOk() {
+        handleExportCSV('actual');
+      },
+      onCancel() {
+        handleExportCSV('completo');
+      },
+      cancelButtonProps: { style: { display: 'inline-block' } },
+      okButtonProps: { style: { display: 'inline-block' } },
+      closable: true,
+      maskClosable: true,
+      footer: (_, { OkBtn, CancelBtn }) => (
+        <>
+          <Button onClick={() => Modal.destroyAll()}>Cerrar</Button>
+          <OkBtn />
+          <CancelBtn />
+        </>
+      ),
+    });
+  };
+
   const columns = [
     {
       title: 'Película',
@@ -138,20 +185,25 @@ const ViewProjections = () => {
       render: (fechaHora) => moment(fechaHora).format('YYYY-MM-DD HH:mm'),
     },
     {
-      title: 'Cine',
-      dataIndex: ['sitio', 'nombre'],
-      key: 'cine',
+      title: 'Director',
+      dataIndex: 'director',
+      key: 'director',
     },
     {
-      title: 'Sala',
-      dataIndex: 'sala',
-      key: 'sala',
+      title: 'Género',
+      dataIndex: 'genero',
+      key: 'genero',
     },
     {
       title: 'Duración',
       dataIndex: 'duracion',
       key: 'duracion',
       render: (duracion) => `${duracion} min`,
+    },
+    {
+      title: 'Sala',
+      dataIndex: 'sala',
+      key: 'sala',
     },
     {
       title: 'Precio',
@@ -169,51 +221,61 @@ const ViewProjections = () => {
         </Space>
       ),
     },
+    {
+      title: 'Estado',
+      key: 'estado',
+      render: (_, record) => {
+        const ahora = moment();
+        const fechaProyeccion = moment(record.fechaHora);
+        if (fechaProyeccion.isBefore(ahora)) {
+          return <span style={{ color: 'red' }}>Finalizada</span>;
+        } else if (fechaProyeccion.isSame(ahora, 'day')) {
+          return <span style={{ color: 'green' }}>Hoy</span>;
+        } else {
+          return <span style={{ color: 'blue' }}>Próxima</span>;
+        }
+      },
+    },
   ];
 
   return (
     <AuthWrapper>
       <div style={{ padding: '24px', background: '#141414', borderRadius: '8px', overflow: 'auto' }}>
         <Title level={2} style={{ color: '#fff', marginBottom: '24px' }}>Cartelera</Title>
-
-        <div style={{ position: 'relative' }}>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'flex-end', 
+          marginBottom: '20px', 
+          gap: '10px'  // Esto añade espacio entre los botones
+        }}>
           <Button
             type="primary"
-            onClick={showAddModal}
-            style={{
-              position: 'absolute',
-              top: '-50px',
-              right: '120px',
-              zIndex: 1
-            }}
+            onClick={() => setMostrarAnteriores(!mostrarAnteriores)}
           >
-            Agregar Proyección
+            {mostrarAnteriores ? 'Ver Proyecciones Actuales' : 'Ver Proyecciones Anteriores'}
           </Button>
-          <Button
-            type="primary"
-            onClick={showManualLoadModal}
-            style={{
-              position: 'absolute',
-              top: '-50px',
-              right: '0',
-              zIndex: 1
-            }}
-          >
+          <Button type="primary" onClick={showAddModal}>
+            Agregar
+          </Button>
+          <Button type="primary" onClick={showManualLoadModal}>
             Carga Manual desde Imagen
           </Button>
-
-          <Table
-            columns={columns}
-            dataSource={projections}
-            rowKey="_id"
-            scroll={{ x: 'max-content' }}
-            pagination={{
-              responsive: true,
-              showSizeChanger: true,
-              showQuickJumper: true,
-            }}
-          />
+          <Button type="primary" onClick={showExportModal}>
+            Exportar a CSV
+          </Button>
         </div>
+
+        <Table
+          columns={columns}
+          dataSource={projections}
+          rowKey="_id"
+          scroll={{ x: 'max-content' }}
+          pagination={{
+            responsive: true,
+            showSizeChanger: true,
+            showQuickJumper: true,
+          }}
+        />
 
         <Modal
           title="Editar Proyección"
@@ -226,13 +288,38 @@ const ViewProjections = () => {
             onFinish={handleEdit}
             layout="vertical"
           >
-            {/* ... (form items remain the same) */}
+            <Form.Item name="nombrePelicula" label="Nombre de la Película" rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="fechaHora" label="Fecha y Hora" rules={[{ required: true }]}>
+              <DatePicker showTime format="YYYY-MM-DD HH:mm" />
+            </Form.Item>
+            <Form.Item name="director" label="Director" rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="genero" label="Género" rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="duracion" label="Duración (minutos)" rules={[{ required: true }]}>
+              <InputNumber min={1} />
+            </Form.Item>
+            <Form.Item name="sala" label="Sala" rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="precio" label="Precio" rules={[{ required: true }]}>
+              <InputNumber min={0} step={0.01} />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit">
+                Actualizar Proyección
+              </Button>
+            </Form.Item>
           </Form>
         </Modal>
 
         <Modal
           title="Agregar Proyección"
-          visible={isAddModalVisible}
+          open={isAddModalVisible}
           onCancel={() => setIsAddModalVisible(false)}
           footer={null}
         >
@@ -269,44 +356,45 @@ const ViewProjections = () => {
             </Form.Item>
           </Form>
         </Modal>
+
         <Modal
-        title="Carga Manual desde Imagen"
-        visible={isManualLoadModalVisible}
-        onCancel={() => setIsManualLoadModalVisible(false)}
-        footer={null}
-      >
-        <Form
-          form={manualLoadForm}
-          onFinish={handleManualLoad}
-          layout="vertical"
+          title="Carga Manual desde Imagen"
+          open={isManualLoadModalVisible}
+          onCancel={() => setIsManualLoadModalVisible(false)}
+          footer={null}
         >
-          <Form.Item 
-            name="imageUrl" 
-            label="URL de la Imagen" 
-            rules={[{ required: true, message: 'Por favor ingrese la URL de la imagen' }]}
+          <Form
+            form={manualLoadForm}
+            onFinish={handleManualLoad}
+            layout="vertical"
           >
-            <Input />
-          </Form.Item>
-          <Form.Item 
-            name="sitioId" 
-            label="Sitio" 
-            rules={[{ required: true, message: 'Por favor seleccione el sitio' }]}
-          >
-            <Select>
-              {sitiosManual.map(sitio => (
-                <Select.Option key={sitio._id} value={sitio._id}>{sitio.nombre}</Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit">
-              Cargar Proyecciones desde Imagen
-            </Button>
-          </Form.Item>
-        </Form>
-      </Modal>
+            <Form.Item
+              name="imageUrl"
+              label="URL de la Imagen"
+              rules={[{ required: true, message: 'Por favor ingrese la URL de la imagen' }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              name="sitioId"
+              label="Sitio"
+              rules={[{ required: true, message: 'Por favor seleccione el sitio' }]}
+            >
+              <Select>
+                {sitiosManual.map(sitio => (
+                  <Select.Option key={sitio._id} value={sitio._id}>{sitio.nombre}</Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit">
+                Cargar Proyecciones desde Imagen
+              </Button>
+            </Form.Item>
+          </Form>
+        </Modal>
       </div>
-    </AuthWrapper>
+    </AuthWrapper >
   );
 };
 
