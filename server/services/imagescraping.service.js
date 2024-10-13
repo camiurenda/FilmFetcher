@@ -22,12 +22,21 @@ class ImageScrapingService {
       if (projections.length > 0) {
         console.log(`${projections.length} proyecciones extraídas de la imagen para ${site.nombre}`);
         await this.updateSiteAndHistory(sitioId, 'exitoso', null, projections.length);
+
+        // Añadir claveUnica y nombreCine a cada proyección
+        const projectionsWithUniqueKey = projections.map(p => ({
+          ...p,
+          sitio: sitioId,
+          nombreCine: site.nombre,
+          claveUnica: `${p.nombrePelicula}-${p.fechaHora.toISOString()}-${sitioId}`
+        }));
+
+        return projectionsWithUniqueKey;
       } else {
         console.log(`No se encontraron proyecciones en la imagen para el sitio ${site.nombre}`);
         await this.updateSiteAndHistory(sitioId, 'exitoso', 'No se encontraron proyecciones', 0);
+        return [];
       }
-
-      return projections.map(p => ({...p, sitio: sitioId}));
     } catch (error) {
       console.error(`Error al hacer scraping de la imagen para el sitio ${sitioId}:`, error);
       await this.updateSiteAndHistory(sitioId, 'fallido', error.message, 0);

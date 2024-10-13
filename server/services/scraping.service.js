@@ -185,20 +185,22 @@ class ScrapingService {
   async insertProjections(projections, site) {
     for (const projection of projections) {
       try {
+        const claveUnica = `${projection.nombrePelicula}-${projection.fechaHora.toISOString()}-${site._id}`;
         await Projection.findOneAndUpdate(
-          {
-            nombrePelicula: projection.nombrePelicula,
-            fechaHora: projection.fechaHora,
-            sitio: site._id,
-            nombreCine: site.nombre
+          { claveUnica },
+          { 
+            ...projection, 
+            sitio: site._id, 
+            nombreCine: site.nombre,
+            claveUnica
           },
-          { ...projection, sitio: site._id, nombreCine: site.nombre },
           { upsert: true, new: true, setDefaultsOnInsert: true }
         );
       } catch (error) {
         if (error.code === 11000) {
-          console.log(`Proyección duplicada ignorada: ${projection.nombrePelicula} en ${site.nombre}`);
+          console.log(`Proyección duplicada ignorada: ${projection.nombrePelicula} en ${site.nombre} a las ${projection.fechaHora}`);
         } else {
+          console.error('Error al insertar/actualizar proyección:', error);
           throw error;
         }
       }

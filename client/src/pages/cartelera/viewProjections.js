@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import moment from 'moment';
+import AddProjectionModal from './addProjections'; // Asegúrate de que la ruta sea correcta
 
 const { Title } = Typography;
 const { confirm } = Modal;
@@ -114,10 +115,7 @@ const ViewProjections = () => {
 
   const handleAdd = async (values) => {
     try {
-      const response = await axios.post('http://localhost:5000/api/projections/add', {
-        ...values,
-        fechaHora: values.fechaHora.toISOString(),
-      });
+      const response = await axios.post('http://localhost:5000/api/projections/add', values);
       message.success('Proyección agregada correctamente');
       setIsAddModalVisible(false);
       setProjections([...projections, response.data]);
@@ -212,17 +210,7 @@ const ViewProjections = () => {
       render: (precio) => `$${precio.toFixed(2)}`,
     },
     {
-      title: 'Acciones',
-      key: 'action',
-      render: (_, record) => (
-        <Space size="small">
-          <Button size="small" onClick={() => showEditModal(record)}>Editar</Button>
-          <Button size="small" danger onClick={() => handleDisable(record._id)}>Deshabilitar</Button>
-        </Space>
-      ),
-    },
-    {
-      title: 'Estado',
+      title: 'Vigencia',
       key: 'estado',
       render: (_, record) => {
         const ahora = moment();
@@ -236,6 +224,16 @@ const ViewProjections = () => {
         }
       },
     },
+    {
+      title: 'Acciones',
+      key: 'action',
+      render: (_, record) => (
+        <Space size="small">
+          <Button size="small" onClick={() => showEditModal(record)}>Editar</Button>
+          <Button size="small" danger onClick={() => handleDisable(record._id)}>Deshabilitar</Button>
+        </Space>
+      ),
+    },
   ];
 
   return (
@@ -246,7 +244,7 @@ const ViewProjections = () => {
           display: 'flex', 
           justifyContent: 'flex-end', 
           marginBottom: '20px', 
-          gap: '10px'  // Esto añade espacio entre los botones
+          gap: '10px'
         }}>
           <Button
             type="primary"
@@ -294,19 +292,19 @@ const ViewProjections = () => {
             <Form.Item name="fechaHora" label="Fecha y Hora" rules={[{ required: true }]}>
               <DatePicker showTime format="YYYY-MM-DD HH:mm" />
             </Form.Item>
-            <Form.Item name="director" label="Director" rules={[{ required: true }]}>
+            <Form.Item name="director" label="Director">
               <Input />
             </Form.Item>
-            <Form.Item name="genero" label="Género" rules={[{ required: true }]}>
+            <Form.Item name="genero" label="Género">
               <Input />
             </Form.Item>
-            <Form.Item name="duracion" label="Duración (minutos)" rules={[{ required: true }]}>
+            <Form.Item name="duracion" label="Duración (minutos)">
               <InputNumber min={1} />
             </Form.Item>
             <Form.Item name="sala" label="Sala" rules={[{ required: true }]}>
               <Input />
             </Form.Item>
-            <Form.Item name="precio" label="Precio" rules={[{ required: true }]}>
+            <Form.Item name="precio" label="Precio">
               <InputNumber min={0} step={0.01} />
             </Form.Item>
             <Form.Item>
@@ -317,45 +315,11 @@ const ViewProjections = () => {
           </Form>
         </Modal>
 
-        <Modal
-          title="Agregar Proyección"
-          open={isAddModalVisible}
+        <AddProjectionModal
+          isVisible={isAddModalVisible}
           onCancel={() => setIsAddModalVisible(false)}
-          footer={null}
-        >
-          <Form
-            form={form}
-            onFinish={handleAdd}
-            layout="vertical"
-          >
-            <Form.Item name="nombrePelicula" label="Nombre de la Película" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="fechaHora" label="Fecha y Hora" rules={[{ required: true }]}>
-              <DatePicker showTime format="YYYY-MM-DD HH:mm" />
-            </Form.Item>
-            <Form.Item name="director" label="Director" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="genero" label="Género" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="duracion" label="Duración (minutos)" rules={[{ required: true }]}>
-              <InputNumber min={1} />
-            </Form.Item>
-            <Form.Item name="sala" label="Sala" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="precio" label="Precio" rules={[{ required: true }]}>
-              <InputNumber min={0} step={0.01} />
-            </Form.Item>
-            <Form.Item>
-              <Button type="primary" htmlType="submit">
-                Agregar Proyección
-              </Button>
-            </Form.Item>
-          </Form>
-        </Modal>
+          onAdd={handleAdd}
+        />
 
         <Modal
           title="Carga Manual desde Imagen"
@@ -394,7 +358,7 @@ const ViewProjections = () => {
           </Form>
         </Modal>
       </div>
-    </AuthWrapper >
+    </AuthWrapper>
   );
 };
 

@@ -1,0 +1,95 @@
+import React, { useEffect, useState } from 'react';
+import { Modal, Form, Input, DatePicker, InputNumber, Select, Button } from 'antd';
+import moment from 'moment';
+import axios from 'axios';
+
+const { Option } = Select;
+
+const AddProjectionModal = ({ isVisible, onCancel, onAdd }) => {
+  const [form] = Form.useForm();
+  const [sites, setSites] = useState([]);
+
+  useEffect(() => {
+    const fetchSites = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/api/sites');
+        setSites(response.data);
+      } catch (error) {
+        console.error('Error fetching sites:', error);
+      }
+    };
+    fetchSites();
+  }, []);
+
+  const handleSubmit = (values) => {
+    const formattedValues = {
+      ...values,
+      fechaHora: values.fechaHora.toISOString(),
+    };
+    onAdd(formattedValues);
+    form.resetFields();
+  };
+
+  return (
+    <Modal
+      title="Agregar Proyección"
+      open={isVisible}
+      onCancel={onCancel}
+      footer={null}
+    >
+      <Form
+        form={form}
+        onFinish={handleSubmit}
+        layout="vertical"
+      >
+        <Form.Item 
+          name="nombrePelicula" 
+          label="Nombre de la Película" 
+          rules={[{ required: true, message: 'Por favor ingrese el nombre de la película' }]}
+        >
+          <Input />
+        </Form.Item>
+        <Form.Item 
+          name="fechaHora" 
+          label="Fecha y Hora" 
+          rules={[{ required: true, message: 'Por favor seleccione la fecha y hora' }]}
+        >
+          <DatePicker showTime format="YYYY-MM-DD HH:mm" />
+        </Form.Item>
+        <Form.Item 
+          name="sitio" 
+          label="Sitio" 
+          rules={[{ required: true, message: 'Por favor seleccione el sitio' }]}
+        >
+          <Select>
+            {sites.map(site => (
+              <Option key={site._id} value={site._id}>{site.nombre}</Option>
+            ))}
+          </Select>
+        </Form.Item>
+        <Form.Item name="director" label="Director">
+          <Input />
+        </Form.Item>
+        <Form.Item name="genero" label="Género">
+          <Input />
+        </Form.Item>
+        <Form.Item name="duracion" label="Duración (minutos)">
+          <InputNumber min={1} />
+        </Form.Item>
+        <Form.Item name="sala" label="Sala">
+          <Input />
+        </Form.Item>
+        <Form.Item name="precio" label="Precio">
+          <InputNumber min={0} step={0.01} />
+        </Form.Item>
+        <Form.Item>
+          <Button type="primary" htmlType="submit">
+            Agregar Proyección
+          </Button>
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
+};
+
+export default AddProjectionModal;

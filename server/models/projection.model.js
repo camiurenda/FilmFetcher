@@ -11,32 +11,27 @@ const ProjectionSchema = new mongoose.Schema({
   },
   director: {
     type: String,
-    required: true,
+    default: 'No especificado',
   },
   genero: {
     type: String,
-    required: true,
+    default: 'No especificado',
   },
   duracion: {
     type: Number,
-    required: true,
+    default: 0,
   },
   sala: {
     type: String,
-    required: true,
+    default: '',
   },
   precio: {
     type: Number,
-    required: true,
+    default: 0,
   },
   habilitado: {
     type: Boolean,
     default: true,
-  },
-  sitio: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Sites',
-    required: true,
   },
   fechaCreacion: {
     type: Date,
@@ -45,7 +40,40 @@ const ProjectionSchema = new mongoose.Schema({
   cargaManual: {
     type: Boolean,
     default: false,
+  },
+  sitio: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Sites',
+    required: true,
+  },
+  nombreCine: {
+    type: String,
+    required: true,
+  },
+  claveUnica: {
+    type: String,
+    unique: true,
+    required: true,
   }
+});
+
+ProjectionSchema.index({ nombrePelicula: 1, fechaHora: 1, sitio: 1 }, { unique: true });
+
+ProjectionSchema.methods.generarClaveUnica = function() {
+  return `${this.nombrePelicula}-${this.fechaHora.toISOString()}-${this.sitio}`;
+};
+
+ProjectionSchema.pre('save', async function(next) {
+  if (!this.claveUnica) {
+    this.claveUnica = this.generarClaveUnica();
+  }
+  if (!this.nombreCine && this.sitio) {
+    const site = await mongoose.model('Sites').findById(this.sitio);
+    if (site) {
+      this.nombreCine = site.nombre;
+    }
+  }
+  next();
 });
 
 module.exports = mongoose.model('Projection', ProjectionSchema);

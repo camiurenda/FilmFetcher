@@ -2,17 +2,54 @@ const express = require('express');
 const Projection = require('../models/projection.model');
 const ScrapingService = require('../services/scraping.service');
 const ImageScrapingService = require('../services/imagescraping.service');
+const Site = require('../models/site.model');
 const router = express.Router();
 const { Parser } = require('json2csv');
 
 // Crear una nueva proyección
 router.post('/add', async (req, res) => {
   try {
-    const newProjection = new Projection(req.body);
+    const { nombrePelicula, fechaHora, sitio, director, genero, duracion, sala, precio } = req.body;
+
+    // Validar campos requeridos
+    if (!nombrePelicula || !fechaHora || !sitio) {
+      return res.status(400).json({ message: 'Faltan campos requeridos: nombrePelicula, fechaHora y sitio son obligatorios' });
+    }
+
+    // Obtener el nombre del cine
+    let siteInfo;
+    try {
+      siteInfo = await Site.findById(sitio);
+      if (!siteInfo) {
+        return res.status(404).json({ message: 'Sitio no encontrado' });
+      }
+    } catch (error) {
+      console.error('Error al buscar el sitio:', error);
+      return res.status(500).json({ message: 'Error al buscar el sitio en la base de datos' });
+    }
+
+    // Generar claveUnica
+    const claveUnica = `${nombrePelicula}-${new Date(fechaHora).toISOString()}-${sitio}`;
+
+    const newProjection = new Projection({
+      nombrePelicula,
+      fechaHora,
+      sitio,
+      director,
+      genero,
+      duracion,
+      sala,
+      precio,
+      cargaManual: true,
+      nombreCine: siteInfo.nombre,
+      claveUnica
+    });
+
     const savedProjection = await newProjection.save();
     res.status(201).json(savedProjection);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    console.error('Error al crear la proyección:', error);
+    res.status(500).json({ message: 'Error interno del servidor al crear la proyección' });
   }
 });
 
@@ -48,10 +85,13 @@ router.post('/load-from-image', async (req, res) => {
     const { imageUrl, sitioId } = req.body;
     const projections = await ImageScrapingService.scrapeFromImage(imageUrl, sitioId);
     
-    // Marcar las proyecciones como carga manual
-    const projectionsWithManualFlag = projections.map(p => ({...p, cargaManual: true}));
-    
-    const savedProjections = await Projection.insertMany(projectionsWithManualFlag);
+    if (projections.length === 0) {
+      return res.status(404).json({ message: 'No se encontraron proyecciones en la imagen' });
+    }
+
+    // Insertar las proyecciones en la base de datos
+    const savedProjections = await Projection.insertMany(projections);
+
     res.status(201).json(savedProjections);
   } catch (error) {
     console.error('Error al cargar proyecciones desde imagen:', error);
@@ -142,7 +182,7 @@ router.get('/exportar-csv', async (req, res) => {
 
     const csv = parser.parse(projections.map(p => ({
       ...p.toObject(),
-      nombreCine: p.sitio.nombre,
+      nombreCine: p.nombreCine || (p.sitio && p.sitio.nombre) || 'No especificado',
       fechaHora: p.fechaHora.toLocaleString()
     })));
 
