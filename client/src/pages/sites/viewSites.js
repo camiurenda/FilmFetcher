@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Space, Typography, Button, Modal, message, Form, Input, Select, Switch } from 'antd';
+import { Table, Tag, Space, Typography, Button, Modal, message, Form, Input, Select } from 'antd';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import { useNavigate } from 'react-router-dom';
@@ -210,7 +210,7 @@ const ViewSite = () => {
             columns={columns} 
             dataSource={sites} 
             rowKey="_id"
-            scroll={{ x: 'max-content' }}
+            scroll={{ x: true }}
             pagination={{ 
               responsive: true,
               showSizeChanger: true, 
