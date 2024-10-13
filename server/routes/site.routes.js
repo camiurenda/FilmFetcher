@@ -85,16 +85,34 @@ router.get('/', async (req, res) => {
 // Actualizar un sitio
 router.put('/:id', async (req, res) => {
   try {
+    const { id } = req.params;
+    const updateData = req.body;
+
+    updateData.activoParaScraping = updateData.tipoCarga === 'scraping';
+
+    if (updateData.tipoCarga === 'manual') {
+      delete updateData.frecuenciaActualizacion;
+    }
+
     const updatedSite = await Site.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
+      id,
+      updateData,
+      { new: true, runValidators: true }
     );
+
     if (!updatedSite) {
       return res.status(404).json({ message: 'Sitio no encontrado' });
     }
+
+    if (updatedSite.activoParaScraping) {
+      ScrapingService.updateJob(updatedSite);
+    } else {
+      ScrapingService.removeJob(updatedSite._id);
+    }
+
     res.status(200).json(updatedSite);
   } catch (error) {
+    console.error('Error al actualizar el sitio:', error);
     res.status(400).json({ message: error.message });
   }
 });

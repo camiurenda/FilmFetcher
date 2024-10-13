@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Space, Typography, Button, Modal, message, Form, Input, Select } from 'antd';
+import { Table, Tag, Space, Typography, Button, Modal, message, Form, Input, Select, Switch } from 'antd';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import { useNavigate } from 'react-router-dom';
@@ -23,7 +23,7 @@ const ViewSite = () => {
       const response = await axios.get('http://localhost:5000/api/sites');
       setSites(response.data);
     } catch (error) {
-      console.error('Error fetching sites:', error);
+      console.error('Error al obtener sitios:', error);
       message.error('Error al cargar los sitios');
     }
   };
@@ -40,9 +40,9 @@ const ViewSite = () => {
         try {
           await axios.put(`http://localhost:5000/api/sites/disable/${id}`);
           message.success('Sitio deshabilitado correctamente');
-          setSites(sites.filter(site => site._id !== id));
+          fetchSites(); // Actualizar la lista después de deshabilitar
         } catch (error) {
-          console.error('Error disabling site:', error);
+          console.error('Error al deshabilitar el sitio:', error);
           message.error('Error al deshabilitar el sitio');
         }
       },
@@ -77,9 +77,9 @@ const ViewSite = () => {
       });
       message.success('Sitio actualizado correctamente');
       setIsEditModalVisible(false);
-      setSites(sites.map(s => s._id === editingSite._id ? response.data : s));
+      fetchSites(); // Actualizar la lista después de editar
     } catch (error) {
-      console.error('Error updating site:', error);
+      console.error('Error al actualizar el sitio:', error);
       message.error('Error al actualizar el sitio');
     }
   };
@@ -89,9 +89,9 @@ const ViewSite = () => {
       const response = await axios.post('http://localhost:5000/api/sites/add', values);
       message.success('Sitio agregado correctamente');
       setIsAddModalVisible(false);
-      setSites([...sites, response.data]);
+      fetchSites(); // Actualizar la lista después de agregar
     } catch (error) {
-      console.error('Error adding site:', error);
+      console.error('Error al agregar el sitio:', error);
       message.error('Error al agregar el sitio');
     }
   };
@@ -217,7 +217,6 @@ const ViewSite = () => {
             }}
           />
         </div>
-
         <Modal
           title="Editar Sitio"
           visible={isEditModalVisible}

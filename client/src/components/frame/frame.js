@@ -31,7 +31,7 @@ const Frame = ({ children }) => {
     {
       key: 2,
       label: 'Sitios',
-      onClick: () => navigate('/viewSites'),
+      onClick: () => navigate('/sites'),
     },
     {
       key: 3,

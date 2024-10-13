@@ -2,13 +2,12 @@ import React from 'react';
 import { Auth0Provider } from '@auth0/auth0-react';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import Home from './pages/home';
-import Addsites from './pages/sites/addSite';
 import Login from './pages/login';
 import ViewSite from './pages/sites/viewSites';
 import ViewProjections from './pages/cartelera/viewProjections';
 import ScrapingSchedule from './pages/schedule/schedule';
 import ScrapingHistory from './pages/historico/scrapingHistory';
-import "./style/global.css"
+import "./style/global.css";
 
 function App() {
   return (
@@ -23,9 +22,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/sites" element={<Addsites />} />
-          <Route path="/addsites" element={<Addsites />} />
-          <Route path="/viewsites" element={<ViewSite />} />
+          <Route path="/sites" element={<ViewSite />} />
           <Route path="/cartelera" element={<ViewProjections />} />
           <Route path="/scraping-schedule" element={<ScrapingSchedule />} />
           <Route path="/scraping-history" element={<ScrapingHistory />} />
