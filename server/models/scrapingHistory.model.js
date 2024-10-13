@@ -17,6 +17,16 @@ const ScrapingHistorySchema = new mongoose.Schema({
   },
   mensajeError: {
     type: String
+  },
+  cantidadProyecciones: {
+    type: Number,
+    default: 0
+  },
+  respuestaOpenAI: {
+    type: String
+  },
+  causaFallo: {
+    type: String
   }
 });
 

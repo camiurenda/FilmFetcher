@@ -18,14 +18,37 @@ class ScrapingService {
     const sites = await Site.find({ activoParaScraping: true });
     sites.forEach(site => this.scheduleJob(site));
     console.log(`Inicializados ${sites.length} trabajos de scraping.`);
+
+    // Configurar un observador para cambios en la colección de sitios
+    this.setupSiteChangeObserver();
+  }
+
+  setupSiteChangeObserver() {
+    const siteChangeStream = Site.watch();
+    siteChangeStream.on('change', async (change) => {
+      if (change.operationType === 'insert' || change.operationType === 'update') {
+        const updatedSite = await Site.findById(change.documentKey._id);
+        if (updatedSite && updatedSite.activoParaScraping) {
+          this.updateJob(updatedSite);
+        } else if (this.jobs[change.documentKey._id]) {
+          this.removeJob(change.documentKey._id);
+        }
+      } else if (change.operationType === 'delete') {
+        this.removeJob(change.documentKey._id);
+      }
+    });
   }
 
   scheduleJob(site) {
     const cronExpression = this.getCronExpression(site.frecuenciaActualizacion);
     if (!cronExpression) return;
 
+    if (this.jobs[site._id]) {
+      this.jobs[site._id].stop();
+    }
+
     this.jobs[site._id] = cron.schedule(cronExpression, () => this.scrapeSite(site));
-    console.log(`Job programado para ${site.nombre}: ${cronExpression}`);
+    console.log(`Job programado o actualizado para ${site.nombre}: ${cronExpression}`);
   }
 
   getCronExpression(frecuencia) {
@@ -42,6 +65,8 @@ class ScrapingService {
     console.log(`==================== INICIO DE SCRAPING PARA ${site.nombre} ====================`);
     console.log(`Iniciando scraping para ${site.nombre} (${site.url})`);
     let browser;
+    let respuestaOpenAI = '';
+    let causaFallo = '';
     try {
       browser = await puppeteer.launch({
         headless: 'new',
@@ -65,25 +90,39 @@ class ScrapingService {
 
       const htmlContent = await page.content();
       const extractedInfo = this.extractBasicInfo(htmlContent);
-      const projections = await this.openAIScrape(site, extractedInfo);
+      const openAIResponse = await this.openAIScrape(site, extractedInfo);
+      respuestaOpenAI = JSON.stringify(openAIResponse);
+      console.log('Respuesta de OpenAI:', respuestaOpenAI);
+
+      let proyecciones = openAIResponse.proyecciones || openAIResponse.Proyecciones;
+      if (!Array.isArray(proyecciones)) {
+        causaFallo = 'La respuesta de OpenAI no contiene un array de proyecciones válido';
+        console.error(causaFallo);
+        throw new Error(causaFallo);
+      }
+
+      const projections = this.processAIResponse(proyecciones, site._id);
 
       if (projections.length > 0) {
         try {
           await this.insertProjections(projections, site);
           console.log(`${projections.length} proyecciones procesadas correctamente para ${site.nombre}`);
-          await this.updateSiteAndHistory(site._id, 'exitoso', null, projections.length);
+          await this.updateSiteAndHistory(site._id, 'exitoso', null, projections.length, respuestaOpenAI);
         } catch (dbError) {
-          console.error('Error al procesar las proyecciones en la base de datos:', dbError);
-          throw new Error(`Error al procesar las proyecciones: ${dbError.message}`);
+          causaFallo = 'Error al procesar las proyecciones en la base de datos';
+          console.error(causaFallo, dbError);
+          throw new Error(`${causaFallo}: ${dbError.message}`);
         }
       } else {
-        console.log('No se encontraron proyecciones.');
-        await this.updateSiteAndHistory(site._id, 'exitoso', 'No se encontraron proyecciones', 0);
+        causaFallo = 'No se encontraron proyecciones válidas';
+        console.log(causaFallo);
+        await this.updateSiteAndHistory(site._id, 'exitoso', causaFallo, 0, respuestaOpenAI);
       }
     } catch (error) {
+      causaFallo = `Error en scraping: ${error.message}`;
       console.error(`Error en scraping de ${site.nombre}:`, error);
       console.error('Stack trace completo:', error.stack);
-      await this.updateSiteAndHistory(site._id, 'fallido', error.message, 0);
+      await this.updateSiteAndHistory(site._id, 'fallido', error.message, 0, respuestaOpenAI, causaFallo);
     } finally {
       if (browser) {
         await browser.close();
@@ -91,6 +130,7 @@ class ScrapingService {
     }
     console.log(`==================== FIN DE SCRAPING PARA ${site.nombre} ====================`);
   }
+
 
   extractBasicInfo(htmlContent) {
     const $ = cheerio.load(htmlContent);
@@ -135,7 +175,7 @@ class ScrapingService {
         }
       ]
     }
-    Si no encuentras nada no devuelvas nada. Si encuentras, devuelve SOLO el JSON con los titulos en propercase, sin ningún texto adicional ni marcadores de código como \`\`\`json.`;
+    Si no encuentras nada, devuelve un array vacío. Devuelve SOLO el JSON con los titulos en propercase, sin ningún texto adicional ni marcadores de código como \`\`\`json.`;
 
     try {
       const response = await axios.post(
@@ -156,31 +196,45 @@ class ScrapingService {
       content = content.replace(/```json\n?|\n?```/g, '').trim();
 
       let aiResponse = JSON.parse(content);
-      const proyecciones = aiResponse.proyecciones || aiResponse.Proyecciones;
-
-      if (!Array.isArray(proyecciones)) {
-        throw new Error('Respuesta de OpenAI no contiene proyecciones válidas');
-      }
-
-      return this.processAIResponse(proyecciones, site._id);
+      console.log('Respuesta parseada de OpenAI:', aiResponse);
+      return aiResponse;
     } catch (error) {
       console.error('Error en OpenAI scrape:', error);
       throw error;
     }
   }
 
+
   processAIResponse(proyecciones, siteId) {
-    return proyecciones.map(p => ({
-      nombrePelicula: p.nombre || p.Nombre,
-      fechaHora: new Date(p.fechaHora || p.FechaHora),
-      director: p.director || p.Director || 'No especificado',
-      genero: p.genero || p.Genero || 'No especificado',
-      duracion: parseInt(p.duracion || p.Duracion) || 0,
-      sala: p.sala || p.Sala || 'No especificada',
-      precio: parseFloat(p.precio || p.Precio) || 0,
-      sitio: siteId
-    })).filter(p => p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
+    if (!Array.isArray(proyecciones)) {
+      console.error('processAIResponse recibió proyecciones no válidas:', proyecciones);
+      return [];
+    }
+    const currentYear = new Date().getFullYear();
+    return proyecciones.map(p => {
+      let fechaHora = new Date(p.fechaHora || p.FechaHora);
+      
+      // Si la fecha es del pasado, asumimos que es del próximo año
+      if (fechaHora < new Date()) {
+        fechaHora.setFullYear(currentYear);
+      } else {
+        // Si no, aseguramos que sea al menos del año actual
+        fechaHora.setFullYear(Math.max(fechaHora.getFullYear(), currentYear));
+      }
+
+      return {
+        nombrePelicula: p.nombre || p.Nombre,
+        fechaHora: fechaHora,
+        director: p.director || p.Director || 'No especificado',
+        genero: p.genero || p.Genero || 'No especificado',
+        duracion: parseInt(p.duracion || p.Duracion) || 0,
+        sala: p.sala || p.Sala || 'No especificada',
+        precio: parseFloat(p.precio || p.Precio) || 0,
+        sitio: siteId
+      };
+    }).filter(p => p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
   }
+
 
   async insertProjections(projections, site) {
     for (const projection of projections) {
@@ -207,7 +261,7 @@ class ScrapingService {
     }
   }
 
-  async updateSiteAndHistory(siteId, estado, mensajeError, cantidadProyecciones) {
+  async updateSiteAndHistory(siteId, estado, mensajeError, cantidadProyecciones, respuestaOpenAI, causaFallo = '') {
     await Site.findByIdAndUpdate(siteId, {
       $set: { 'configuracionScraping.ultimoScrapingExitoso': new Date() },
       $push: { 'configuracionScraping.errores': { fecha: new Date(), mensaje: mensajeError } }
@@ -217,16 +271,16 @@ class ScrapingService {
       siteId,
       estado,
       mensajeError,
-      cantidadProyecciones
+      cantidadProyecciones,
+      respuestaOpenAI,
+      causaFallo
     });
   }
-
   updateJob(site) {
-    if (this.jobs[site._id]) {
-      this.jobs[site._id].stop();
-    }
     if (site.activoParaScraping) {
       this.scheduleJob(site);
+    } else {
+      this.removeJob(site._id);
     }
   }
 
@@ -234,6 +288,7 @@ class ScrapingService {
     if (this.jobs[siteId]) {
       this.jobs[siteId].stop();
       delete this.jobs[siteId];
+      console.log(`Job removido para el sitio con ID: ${siteId}`);
     }
   }
 
