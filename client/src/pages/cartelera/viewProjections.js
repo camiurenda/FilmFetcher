@@ -5,6 +5,7 @@ import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import moment from 'moment';
 import AddProjectionModal from './addProjections'; // Asegúrate de que la ruta sea correcta
+import API_URL from '../../config/api';
 
 const { Title } = Typography;
 const { confirm } = Modal;
@@ -24,7 +25,7 @@ const ViewProjections = () => {
   const fetchProjections = async () => {
     try {
       const endpoint = mostrarAnteriores ? '/api/projections/proyecciones-anteriores' : '/api/projections/proyecciones-actuales';
-      const response = await axios.get(`http://localhost:5000${endpoint}`);
+      const response = await axios.get(`${API_URL}${endpoint}`);
       setProjections(response.data);
     } catch (error) {
       console.error('Error fetching projections:', error);
@@ -43,7 +44,7 @@ const ViewProjections = () => {
       content: 'Esta acción ocultará la proyección de la cartelera principal.',
       onOk: async () => {
         try {
-          await axios.put(`http://localhost:5000/api/projections/disable/${id}`);
+          await axios.put(`${API_URL}/api/projections/disable/${id}`);
           message.success('Proyección deshabilitada correctamente');
           setProjections(projections.filter(projection => projection._id !== id));
         } catch (error) {
@@ -61,7 +62,7 @@ const ViewProjections = () => {
 
   const handleManualLoad = async (values) => {
     try {
-      const response = await axios.post('http://localhost:5000/api/projections/load-from-image', {
+      const response = await axios.post(`${API_URL}/api/projections/load-from-image`, {
         imageUrl: values.imageUrl,
         sitioId: values.sitioId
       });
@@ -76,7 +77,7 @@ const ViewProjections = () => {
 
   const fetchSitiosManual = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/sites/manual');
+      const response = await axios.get(`${API_URL}/api/sites/manual`);
       setSitiosManual(response.data);
     } catch (error) {
       console.error('Error fetching sitios manuales:', error);
@@ -100,7 +101,7 @@ const ViewProjections = () => {
 
   const handleEdit = async (values) => {
     try {
-      const response = await axios.put(`http://localhost:5000/api/projections/${editingProjection._id}`, {
+      const response = await axios.put(`${API_URL}/api/projections/${editingProjection._id}`, {
         ...values,
         fechaHora: values.fechaHora.toISOString(),
       });
@@ -115,7 +116,7 @@ const ViewProjections = () => {
 
   const handleAdd = async (values) => {
     try {
-      const response = await axios.post('http://localhost:5000/api/projections/add', values);
+      const response = await axios.post(`${API_URL}/api/projections/add`, values);
       message.success('Proyección agregada correctamente');
       setIsAddModalVisible(false);
       setProjections([...projections, response.data]);
@@ -126,7 +127,7 @@ const ViewProjections = () => {
   };
 
   const handleExportCSV = (tipo) => {
-    axios.get(`http://localhost:5000/api/projections/exportar-csv?tipo=${tipo}`, {
+    axios.get(`${API_URL}/api/projections/exportar-csv?tipo=${tipo}`, {
       responseType: 'blob',
     })
       .then((response) => {

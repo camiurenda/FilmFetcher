@@ -28,7 +28,7 @@ const DashboardStats = () => {
     const fetchStats = async () => {
       try {
         console.log('Iniciando fetchStats');
-        const response = await axios.get('http://localhost:5000/api/stats');
+        const response = await axios.get('${API_URL}/api/stats');
         console.log('Respuesta recibida:', response.data);
         setStats(response.data);
         setLoading(false);

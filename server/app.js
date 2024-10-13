@@ -28,19 +28,36 @@ morgan.token('custom-log', (req, res) => {
   return '';
 });
 
+require('dotenv').config();
 app.use(morgan(':method :url :status :response-time ms :custom-log'));
-
 app.use(express.json());
 app.use(auth(config));
+
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5000',
+  process.env.FRONTEND_URL,
+  'https://film-fetcher-eta.vercel.app'
+];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://film-fetcher-eta.vercel.app/',
+  origin: function(origin, callback) {
+    // Permitir solicitudes sin origen (como aplicaciones móviles o curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   credentials: true
 }));
+
 app.use('/api', siteRoutes);
 app.use('/api/sites', siteRoutes);
 app.use('/api/projections', projectionRoutes);
 app.use('/api/stats', statsRoutes);
-require('dotenv').config();
+
 
 const originalConsoleLog = console.log;
 console.log = (...args) => {
