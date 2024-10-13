@@ -56,7 +56,7 @@ const DashboardStats = () => {
 
   const statCards = [
     { title: 'Sitios Agregados', value: stats.sitiosAgregados, icon: <DatabaseOutlined /> },
-    { title: 'Funciones Scrapeadas', value: stats.funcionesScrapeadas, icon: <ProjectOutlined /> },
+    { title: 'Funciones encontradas', value: stats.funcionesScrapeadas, icon: <ProjectOutlined /> },
     { title: 'Próximo Scraping', value: stats.proximoScraping, icon: <ClockCircleOutlined /> },
     { title: 'Último Scraping Exitoso', value: stats.ultimoScrapingExitoso, icon: <CheckCircleOutlined /> },
     { title: 'Tasa de Éxito de Scraping', value: `${stats.tasaExitoScraping}%`, icon: <PercentageOutlined /> },
