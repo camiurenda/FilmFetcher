@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Form, Input, DatePicker, InputNumber, Select, Button } from 'antd';
+import { Modal, Form, Input, DatePicker, TimePicker, InputNumber, Select, Button } from 'antd';
 import moment from 'moment';
 import axios from 'axios';
 
@@ -15,17 +15,24 @@ const AddProjectionModal = ({ isVisible, onCancel, onAdd }) => {
         const response = await axios.get('http://localhost:5000/api/sites');
         setSites(response.data);
       } catch (error) {
-        console.error('Error fetching sites:', error);
+        console.error('Error al obtener sitios:', error);
       }
     };
     fetchSites();
   }, []);
 
   const handleSubmit = (values) => {
+    const fecha = values.fecha.format('YYYY-MM-DD');
+    const hora = values.hora.format('HH:mm:ss');
+    const fechaHora = moment(`${fecha} ${hora}`).toISOString();
+
     const formattedValues = {
       ...values,
-      fechaHora: values.fechaHora.toISOString(),
+      fechaHora,
     };
+    delete formattedValues.fecha;
+    delete formattedValues.hora;
+
     onAdd(formattedValues);
     form.resetFields();
   };
@@ -50,11 +57,24 @@ const AddProjectionModal = ({ isVisible, onCancel, onAdd }) => {
           <Input />
         </Form.Item>
         <Form.Item 
-          name="fechaHora" 
-          label="Fecha y Hora" 
-          rules={[{ required: true, message: 'Por favor seleccione la fecha y hora' }]}
+          name="fecha" 
+          label="Fecha" 
+          rules={[{ required: true, message: 'Por favor seleccione la fecha' }]}
         >
-          <DatePicker showTime format="YYYY-MM-DD HH:mm" />
+          <DatePicker 
+            format="DD-MM-YYYY"
+            inputReadOnly={false}
+          />
+        </Form.Item>
+        <Form.Item 
+          name="hora" 
+          label="Hora" 
+          rules={[{ required: true, message: 'Por favor seleccione la hora' }]}
+        >
+          <TimePicker 
+            format="HH:mm"
+            inputReadOnly={false}
+          />
         </Form.Item>
         <Form.Item 
           name="sitio" 
