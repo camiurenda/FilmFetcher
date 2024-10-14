@@ -8,13 +8,15 @@ const projectionRoutes = require('./routes/projection.routes');
 const ScrapingService = require('./services/scraping.service'); 
 const statsRoutes = require('./routes/stats.routes');
 
+require('dotenv').config();
+
 const config = {
   authRequired: false,
   auth0Logout: true,
-  secret: 'a long, randomly-generated string stored in env',
-  baseURL: 'http://localhost:3000',
-  clientID: 'ylCwDbHoy8TbjzWlDQ4DZ1LXJvWSBDhE',
-  issuerBaseURL: 'https://dev-8ctrmmam10bofjis.us.auth0.com'
+  secret: process.env.SECRET,
+  baseURL: process.env.BASE_URL,
+  clientID: process.env.CLIENT_ID,
+  issuerBaseURL: process.env.ISSUER_BASE_URL
 };
 
 const app = express();
@@ -28,7 +30,6 @@ morgan.token('custom-log', (req, res) => {
   return '';
 });
 
-require('dotenv').config();
 app.use(morgan(':method :url :status :response-time ms :custom-log'));
 app.use(express.json());
 app.use(auth(config));
@@ -42,7 +43,6 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function(origin, callback) {
-    // Permitir solicitudes sin origen (como aplicaciones móviles o curl)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) === -1) {
       var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
@@ -57,7 +57,6 @@ app.use('/api', siteRoutes);
 app.use('/api/sites', siteRoutes);
 app.use('/api/projections', projectionRoutes);
 app.use('/api/stats', statsRoutes);
-
 
 const originalConsoleLog = console.log;
 console.log = (...args) => {
@@ -76,11 +75,10 @@ app.get('/', (req, res) => {
   res.send(req.oidc.isAuthenticated() ? 'Logged in' : 'Logged out');
 });
 
-mongoose.connect(process.env.MONGO_DB_URI, {
-})
+mongoose.connect(process.env.MONGO_DB_URI, {})
   .then(() => {
     console.log('Conectado a MongoDB');
-    return ScrapingService.initializeJobs(); // Inicializa los jobs después de conectar a MongoDB
+    return ScrapingService.initializeJobs();
   })
   .then(() => {
     console.log('Trabajos de scraping inicializados');
