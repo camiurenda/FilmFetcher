@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Row, Col, Statistic, Spin, Alert } from 'antd';
 import { DatabaseOutlined, ProjectOutlined, ClockCircleOutlined, CheckCircleOutlined, PercentageOutlined, CrownOutlined } from '@ant-design/icons';
 import axios from 'axios';
+import API_URL from '../config/api';
 
 const gradients = [
   'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -28,7 +29,7 @@ const DashboardStats = () => {
     const fetchStats = async () => {
       try {
         console.log('Iniciando fetchStats');
-        const response = await axios.get('${API_URL}/api/stats');
+        const response = await axios.get(`${API_URL}/api/stats`);
         console.log('Respuesta recibida:', response.data);
         setStats(response.data);
         setLoading(false);

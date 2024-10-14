@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Table, Typography, Spin, message } from 'antd';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
+import API_URL from '../../config/api';
 
 const { Title } = Typography;
 
@@ -15,7 +16,7 @@ const ScrapingSchedule = () => {
 
   const fetchSchedule = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/sites/scraping-schedule');
+      const response = await axios.get(`${API_URL}/api/sites/scraping-schedule`);
       setSchedule(response.data);
       setLoading(false);
     } catch (error) {
