@@ -72,7 +72,7 @@ console.log = (...args) => {
 };
 
 app.get('/', (req, res) => {
-  res.send(req.oidc.isAuthenticated() ? 'Logged in' : 'Logged out');
+  res.send('Servidor funcionando');
 });
 
 mongoose.connect(process.env.MONGO_DB_URI, {})
