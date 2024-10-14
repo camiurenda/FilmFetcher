@@ -37,7 +37,6 @@ app.use(auth(config));
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5000',
-  process.env.FRONTEND_URL,
   'https://film-fetcher-eta.vercel.app',
   'https://film-fetcher-exc9.vercel.app'
 ];
