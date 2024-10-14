@@ -72,7 +72,7 @@ console.log = (...args) => {
 };
 
 app.get('/', (req, res) => {
-  res.send('Servidor funcionando');
+  res.send('Servidor funcionando!!!');
 });
 
 mongoose.connect(process.env.MONGO_DB_URI, {})
