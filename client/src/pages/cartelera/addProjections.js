@@ -12,7 +12,7 @@ const AddProjectionModal = ({ isVisible, onCancel, onAdd }) => {
   useEffect(() => {
     const fetchSites = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/sites');
+        const response = await axios.get(`${API_URL}/api/sites`);
         setSites(response.data);
       } catch (error) {
         console.error('Error al obtener sitios:', error);
