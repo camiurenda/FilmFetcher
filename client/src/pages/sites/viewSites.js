@@ -22,16 +22,18 @@ const ViewSite = () => {
   const fetchSites = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/sites`);
-      setSites(response.data);
+      setSites(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error al obtener sitios:', error);
       message.error('Error al cargar los sitios');
+      setSites([]);
     }
   };
 
   useEffect(() => {
     fetchSites();
   }, []);
+
 
   const handleDisable = async (id) => {
     confirm({
@@ -210,7 +212,7 @@ const ViewSite = () => {
             columns={columns} 
             dataSource={sites} 
             rowKey="_id"
-            scroll={{ x: true }}
+            scroll={{ x: 'max-content' }}
             pagination={{ 
               responsive: true,
               showSizeChanger: true, 

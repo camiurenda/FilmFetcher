@@ -76,8 +76,10 @@ router.get('/scraping-history', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const sites = await Site.find({ habilitado: true });
-    res.status(200).json(sites);
+    // Asegurarse de que siempre devolvamos un array
+    res.status(200).json(sites || []);
   } catch (error) {
+    console.error('Error al obtener sitios:', error);
     res.status(500).json({ message: error.message });
   }
 });
