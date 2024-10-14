@@ -95,6 +95,10 @@ app.get('/protected', requiresAuth(), (req, res) => {
   res.send('¡Esta ruta está protegida!');
 });
 
+app.get('/api/test', (req, res) => {
+  res.json({ message: 'El backend de Film Fetcher está funcionando correctamente.' });
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Servidor iniciado en el puerto ${PORT}`);
