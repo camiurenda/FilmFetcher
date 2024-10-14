@@ -77,7 +77,7 @@ app.get('/', (req, res) => {
 
 mongoose.connect(process.env.MONGO_DB_URI, {})
   .then(() => {
-    console.log('Conectado a MongoDB');
+    console.log('Conectado exitosamente a MongoDB');
     return ScrapingService.initializeJobs();
   })
   .then(() => {
