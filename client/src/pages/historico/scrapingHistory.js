@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Table, Typography, Spin, message } from 'antd';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
+import API_URL from '../../config/api';
 
 const { Title } = Typography;
 
@@ -16,7 +17,7 @@ const ScrapingHistory = () => {
   const fetchHistory = async () => {
     try {
       // Cambiamos la URL para que coincida con la nueva ruta en el servidor
-      const response = await axios.get('http://localhost:5000/api/scraping-history');
+      const response = await axios.get(`${API_URL}/api/scraping-history`);
       setHistory(response.data);
       setLoading(false);
     } catch (error) {
