@@ -7,6 +7,7 @@ const siteRoutes = require('./routes/site.routes');
 const projectionRoutes = require('./routes/projection.routes');
 const ScrapingService = require('./services/scraping.service'); 
 const statsRoutes = require('./routes/stats.routes');
+const chatbotRoutes = require('./routes/chatbot.routes');
 
 require('dotenv').config();
 
@@ -57,6 +58,8 @@ app.use('/api', siteRoutes);
 app.use('/api/sites', siteRoutes);
 app.use('/api/projections', projectionRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/chatbot', chatbotRoutes);
+
 
 const originalConsoleLog = console.log;
 console.log = (...args) => {
