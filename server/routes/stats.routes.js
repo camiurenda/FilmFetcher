@@ -3,6 +3,7 @@ const router = express.Router();
 const Site = require('../models/site.model');
 const Projection = require('../models/projection.model');
 const ScrapingHistory = require('../models/scrapingHistory.model');
+const ScrapingService = require('../services/scraping.service');
 
 router.get('/', async (req, res) => {
   try {
@@ -14,14 +15,11 @@ router.get('/', async (req, res) => {
     const funcionesScrapeadas = await Projection.countDocuments({ habilitado: true });
     console.log('Funciones scrapeadas:', funcionesScrapeadas);
     
-    const proximoScrapingSite = await Site.findOne({ activoParaScraping: true })
-      .sort({ 'configuracionScraping.proximoScraping': 1 })
-      .select('configuracionScraping.proximoScraping');
-    console.log('Próximo scraping site:', proximoScrapingSite);
-
-    const proximoScraping = proximoScrapingSite && proximoScrapingSite.configuracionScraping
-      ? proximoScrapingSite.configuracionScraping.proximoScraping
-      : 'No programado';
+    // Obtener el próximo scraping programado
+    const proximoScrapingInfo = await ScrapingService.obtenerProximoScraping();
+    const proximoScraping = proximoScrapingInfo ? 
+      `${proximoScrapingInfo.nombre} (${new Date(proximoScrapingInfo.fechaScraping).toLocaleString()})` : 
+      'No programado';
     console.log('Próximo scraping:', proximoScraping);
 
     const ultimoScrapingExitoso = await ScrapingHistory.findOne({ estado: 'exitoso' })

@@ -19,7 +19,6 @@ class ScrapingService {
     sites.forEach(site => this.scheduleJob(site));
     console.log(`Inicializados ${sites.length} trabajos de scraping.`);
 
-    // Configurar un observador para cambios en la colección de sitios
     this.setupSiteChangeObserver();
   }
 
@@ -131,7 +130,6 @@ class ScrapingService {
     console.log(`==================== FIN DE SCRAPING PARA ${site.nombre} ====================`);
   }
 
-
   extractBasicInfo(htmlContent) {
     const $ = cheerio.load(htmlContent);
     let extractedText = '';
@@ -204,7 +202,6 @@ class ScrapingService {
     }
   }
 
-
   processAIResponse(proyecciones, siteId) {
     if (!Array.isArray(proyecciones)) {
       console.error('processAIResponse recibió proyecciones no válidas:', proyecciones);
@@ -214,11 +211,9 @@ class ScrapingService {
     return proyecciones.map(p => {
       let fechaHora = new Date(p.fechaHora || p.FechaHora);
       
-      // Si la fecha es del pasado, asumimos que es del próximo año
       if (fechaHora < new Date()) {
         fechaHora.setFullYear(currentYear);
       } else {
-        // Si no, aseguramos que sea al menos del año actual
         fechaHora.setFullYear(Math.max(fechaHora.getFullYear(), currentYear));
       }
 
@@ -234,7 +229,6 @@ class ScrapingService {
       };
     }).filter(p => p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
   }
-
 
   async insertProjections(projections, site) {
     for (const projection of projections) {
@@ -276,6 +270,7 @@ class ScrapingService {
       causaFallo
     });
   }
+
   updateJob(site) {
     if (site.activoParaScraping) {
       this.scheduleJob(site);
@@ -308,16 +303,57 @@ class ScrapingService {
     ).sort((a, b) => a.fechaScraping - b.fechaScraping);
   }
 
-  calcularProximoScraping(site, fromDate, index) {
+  calcularProximoScraping(site, fromDate) {
     const date = new Date(fromDate);
-    const addTime = {
-      diaria: () => date.setDate(date.getDate() + index),
-      semanal: () => date.setDate(date.getDate() + 7 * index),
-      mensual: () => date.setMonth(date.getMonth() + index),
-      test: () => date.setMinutes(date.getMinutes() + index)
-    };
-    addTime[site.frecuenciaActualizacion]();
+    const ahora = new Date();
+    
+    switch (site.frecuenciaActualizacion) {
+      case 'diaria':
+        date.setHours(0, 0, 0, 0);
+        if (date <= ahora) {
+          date.setDate(date.getDate() + 1);
+        }
+        break;
+      case 'semanal':
+        date.setHours(0, 0, 0, 0);
+        while (date <= ahora) {
+          date.setDate(date.getDate() + 7);
+        }
+        break;
+      case 'mensual':
+        date.setDate(1);
+        date.setHours(0, 0, 0, 0);
+        while (date <= ahora) {
+          date.setMonth(date.getMonth() + 1);
+        }
+        break;
+      case 'test':
+        date.setMinutes(date.getMinutes() + 1);
+        break;
+      default:
+        console.error(`Frecuencia de actualización no válida: ${site.frecuenciaActualizacion}`);
+        return null;
+    }
+    
     return date;
+  }
+
+  async obtenerProximoScraping() {
+    const sitios = await Site.find({ activoParaScraping: true });
+    const ahora = new Date();
+    let proximoScraping = null;
+
+    for (const sitio of sitios) {
+      const proximaFecha = this.calcularProximoScraping(sitio, ahora);
+      if (proximaFecha && (!proximoScraping || proximaFecha < proximoScraping.fechaScraping)) {
+        proximoScraping = {
+          nombre: sitio.nombre,
+          fechaScraping: proximaFecha
+        };
+      }
+    }
+
+    return proximoScraping;
   }
 }
 
