@@ -21,6 +21,8 @@
     "node": "^22.8.0",
     "node-cron": "^3.0.3",
     "openai": "^4.67.3",
-    "puppeteer": "^23.5.3"
+    "pdf-parse": "^1.1.1",
+    "puppeteer-core": "^23.6.0",
+    "chrome-aws-lambda": "^10.1.0"
   }
 }
