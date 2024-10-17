@@ -18,7 +18,7 @@ class TelegramService {
       if (msg.text.startsWith('/')) return; // Ignorar otros comandos
 
       try {
-        const respuesta = await ChatbotServiceMejorado.procesarMensaje(msg.text);
+        const respuesta = await ChatbotService.procesarMensaje(msg.text);
         this.bot.sendMessage(chatId, respuesta);
       } catch (error) {
         console.error('Error al procesar mensaje:', error);
