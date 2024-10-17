@@ -21,6 +21,11 @@ const SiteSchema = new mongoose.Schema({
     enum: ['scraping', 'manual'],
     required: true,
   },
+  tipoArchivo: {
+    type: String,
+    enum: ['imagen', 'pdf'],
+    required: function() { return this.tipoCarga === 'manual'; },
+  },
   frecuenciaActualizacion: {
     type: String,
     enum: ['diaria', 'semanal', 'mensual', 'test'],

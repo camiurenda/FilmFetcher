@@ -1,71 +1,63 @@
+const { OpenAI } = require('openai');
 const Projection = require('../models/projection.model');
-const OpenAI = require('openai');
+const Site = require('../models/site.model');
 
-class ChatbotService {
+class ChatbotServiceMejorado {
   constructor() {
     this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   }
 
   async procesarMensaje(mensaje) {
     try {
-      // Procesar el mensaje con GPT para entender la intención
-      const intencion = await this.analizarIntencion(mensaje);
+      // Obtener información actualizada de la base de datos
+      const peliculasActuales = await this.obtenerPeliculasActuales();
+      const sitios = await this.obtenerSitios();
 
-      // Generar respuesta basada en la intención
-      let respuesta;
-      switch (intencion) {
-        case 'buscar_peliculas':
-          respuesta = await this.buscarPeliculas(mensaje);
-          break;
-        case 'recomendar_pelicula':
-          respuesta = await this.recomendarPelicula(mensaje);
-          break;
-        case 'informacion_pelicula':
-          respuesta = await this.obtenerInformacionPelicula(mensaje);
-          break;
-        default:
-          respuesta = "Lo siento, no entendí tu consulta. ¿Puedes reformularla?";
-      }
+      // Crear un mensaje de sistema con el contexto actual
+      const systemMessage = this.crearMensajeSistema(peliculasActuales, sitios);
 
-      return respuesta;
+      // Procesar el mensaje del usuario con GPT
+      const completion = await this.openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemMessage },
+          { role: "user", content: mensaje }
+        ],
+        max_tokens: 500
+      });
+
+      return completion.choices[0].message.content;
     } catch (error) {
       console.error('Error al procesar mensaje:', error);
       return "Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo más tarde.";
     }
   }
 
-  async analizarIntencion(mensaje) {
-    const completion = await this.openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {role: "system", content: "Eres un asistente CHATBOT que analiza mensajes para determinar la intención del usuario respecto a consultas de cine. Las posibles intenciones son: buscar_peliculas, recomendar_pelicula, informacion_pelicula. No debes tocar otras temáticas que no sean esas."},
-        {role: "user", content: mensaje}
-      ],
-    });
-    return completion.choices[0].message.content.trim().toLowerCase();
+  async obtenerPeliculasActuales() {
+    const fechaActual = new Date();
+    return await Projection.find({
+      habilitado: true,
+      fechaHora: { $gte: fechaActual }
+    }).sort({ fechaHora: 1 }).limit(20);
   }
 
-  async buscarPeliculas(mensaje) {
-    // Lógica para buscar películas en la base de datos
-    const peliculas = await Projection.find().limit(5);
-    return `Algunas películas en cartelera son: ${peliculas.map(p => p.nombrePelicula).join(', ')}`;
+  async obtenerSitios() {
+    return await Site.find({ habilitado: true });
   }
 
-  async recomendarPelicula(mensaje) {
-    // Lógica para recomendar una película basada en el mensaje
-    const pelicula = await Projection.findOne().sort('-fechaHora');
-    return `Te recomiendo ver "${pelicula.nombrePelicula}". Se proyecta en ${pelicula.nombreCine} el ${pelicula.fechaHora.toLocaleDateString()}.`;
-  }
+  crearMensajeSistema(peliculas, sitios) {
+    const peliculasInfo = peliculas.map(p => 
+      `"${p.nombrePelicula}" en ${p.nombreCine} el ${p.fechaHora.toLocaleDateString()} a las ${p.fechaHora.toLocaleTimeString()}`
+    ).join(', ');
 
-  async obtenerInformacionPelicula(mensaje) {
-    const nombrePelicula = mensaje.replace("información sobre ", "").trim();
-    const pelicula = await Projection.findOne({ nombrePelicula: new RegExp(nombrePelicula, 'i') });
-    if (pelicula) {
-      return `"${pelicula.nombrePelicula}" - Director: ${pelicula.director}, Género: ${pelicula.genero}, Duración: ${pelicula.duracion} minutos. Se proyecta en ${pelicula.nombreCine} el ${pelicula.fechaHora.toLocaleDateString()}.`;
-    } else {
-      return "Lo siento, no encontré información sobre esa película.";
-    }
+    const sitiosInfo = sitios.map(s => s.nombre).join(', ');
+
+    return `Eres un asistente de cine amigable y conocedor. Tu tarea es ayudar a los usuarios a encontrar información sobre películas y cines.
+    Actualmente, estas son las películas en cartelera: ${peliculasInfo}.
+    Los cines disponibles son: ${sitiosInfo}.
+    Responde de manera amable y concisa a las preguntas de los usuarios sobre estas películas, cines, horarios o cualquier otra consulta relacionada con el cine.
+    Si te preguntan por una película que no está en la lista, puedes sugerir alguna de las que sí están disponibles.`;
   }
 }
 
-module.exports = new ChatbotService();
+module.exports = new ChatbotServiceMejorado();

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Typography, Spin, message } from 'antd';
+import { Table, Typography, Spin, message, Tag, Tooltip } from 'antd';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import API_URL from '../../config/api';
@@ -7,58 +7,75 @@ import API_URL from '../../config/api';
 const { Title } = Typography;
 
 const ScrapingHistory = () => {
-  const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [historial, setHistorial] = useState([]);
+  const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
-    fetchHistory();
+    obtenerHistorial();
   }, []);
 
-  const fetchHistory = async () => {
+  const obtenerHistorial = async () => {
     try {
-      // Cambiamos la URL para que coincida con la nueva ruta en el servidor
-      const response = await axios.get(`${API_URL}/api/scraping-history`);
-      setHistory(response.data);
-      setLoading(false);
+      const respuesta = await axios.get(`${API_URL}/api/scraping-history`);
+      const datos = Array.isArray(respuesta.data) ? respuesta.data : [];
+      const historialOrdenado = datos
+        .map(item => ({
+          ...item,
+          fechaScraping: new Date(item.fechaScraping),
+        }))
+        .sort((a, b) => a.fechaScraping - b.fechaScraping);
+      setHistorial(historialOrdenado);
     } catch (error) {
-      console.error('Error fetching scraping history:', error);
+      console.error('Error al obtener el historial de scraping:', error);
       message.error('Error al cargar el historial de scraping');
-      setLoading(false);
+    } finally {
+      setCargando(false);
     }
   };
   
-  const columns = [
+  const columnas = [
     {
       title: 'Nombre del Sitio',
       dataIndex: ['siteId', 'nombre'],
       key: 'nombre',
+      render: (nombre, record) => nombre || record.siteId?.nombre || 'Desconocido',
     },
     {
       title: 'Fecha de Scraping',
       dataIndex: 'fechaScraping',
       key: 'fechaScraping',
-      render: (date) => new Date(date).toLocaleString(),
+      render: (fecha) => {
+        const fechaFormateada = fecha instanceof Date ? fecha.toLocaleString() : 'Fecha inválida';
+        return <Tooltip title={fechaFormateada}>{fechaFormateada}</Tooltip>;
+      },
+      sorter: (a, b) => new Date(a.fechaScraping) - new Date(b.fechaScraping),
+      defaultSortOrder: 'descend',
     },
     {
       title: 'Cantidad de Proyecciones',
       dataIndex: 'cantidadProyecciones',
       key: 'cantidadProyecciones',
+      render: (cantidad) => cantidad || 0,
     },
     {
       title: 'Estado',
       dataIndex: 'estado',
       key: 'estado',
       render: (estado) => (
-        <span style={{ color: estado === 'exitoso' ? 'green' : 'red' }}>
-          {estado.charAt(0).toUpperCase() + estado.slice(1)}
-        </span>
+        <Tag color={estado === 'exitoso' ? 'green' : 'red'}>
+          {(estado || 'Desconocido').charAt(0).toUpperCase() + (estado || 'Desconocido').slice(1)}
+        </Tag>
       ),
     },
     {
       title: 'Mensaje de Error',
       dataIndex: 'mensajeError',
       key: 'mensajeError',
-      render: (mensaje) => mensaje || 'N/A',
+      render: (mensaje) => (
+        <Tooltip title={mensaje || 'N/A'}>
+          <span>{mensaje ? (mensaje.length > 50 ? `${mensaje.substring(0, 50)}...` : mensaje) : 'N/A'}</span>
+        </Tooltip>
+      ),
     },
   ];
 
@@ -66,17 +83,19 @@ const ScrapingHistory = () => {
     <AuthWrapper>
       <div style={{ padding: '24px', background: '#141414', borderRadius: '8px' }}>
         <Title level={2} style={{ color: '#fff', marginBottom: '24px' }}>Historial de Scraping</Title>
-        {loading ? (
+        {cargando ? (
           <Spin size="large" />
         ) : (
           <Table 
-            columns={columns} 
-            dataSource={history} 
-            rowKey="_id"
+            columns={columnas} 
+            dataSource={historial} 
+            rowKey={(record) => record._id || Math.random().toString()}
             pagination={{ 
               responsive: true,
               showSizeChanger: true, 
               showQuickJumper: true,
+              defaultPageSize: 10,
+              showTotal: (total, range) => `${range[0]}-${range[1]} de ${total} registros`,
             }}
           />
         )}

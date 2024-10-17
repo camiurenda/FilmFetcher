@@ -7,7 +7,7 @@ const siteRoutes = require('./routes/site.routes');
 const projectionRoutes = require('./routes/projection.routes');
 const ScrapingService = require('./services/scraping.service'); 
 const statsRoutes = require('./routes/stats.routes');
-const chatbotRoutes = require('./routes/chatbot.routes');
+const TelegramService = require('./services/telegram.service');
 
 require('dotenv').config();
 
@@ -58,7 +58,7 @@ app.use('/api', siteRoutes);
 app.use('/api/sites', siteRoutes);
 app.use('/api/projections', projectionRoutes);
 app.use('/api/stats', statsRoutes);
-app.use('/api/chatbot', chatbotRoutes);
+
 
 
 const originalConsoleLog = console.log;
@@ -99,6 +99,8 @@ app.get('/protected', requiresAuth(), (req, res) => {
 app.get('/api/test', (req, res) => {
   res.json({ message: 'El backend de Film Fetcher está funcionando correctamente.' });
 });
+
+new TelegramService();
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

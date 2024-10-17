@@ -2,6 +2,7 @@ const express = require('express');
 const Projection = require('../models/projection.model');
 const ScrapingService = require('../services/scraping.service');
 const ImageScrapingService = require('../services/imagescraping.service');
+const PDFScrapingService = require('../services/pdfscraping.service');
 const Site = require('../models/site.model');
 const router = express.Router();
 const { Parser } = require('json2csv');
@@ -79,22 +80,32 @@ router.get('/proyecciones-anteriores', async (req, res) => {
   }
 });
 
-// Cargar proyecciones desde imagen
-router.post('/load-from-image', async (req, res) => {
+
+router.post('/load-from-file', async (req, res) => {
   try {
-    const { imageUrl, sitioId } = req.body;
-    const projections = await ImageScrapingService.scrapeFromImage(imageUrl, sitioId);
-    
-    if (projections.length === 0) {
-      return res.status(404).json({ message: 'No se encontraron proyecciones en la imagen' });
+    const { fileUrl, sitioId, fileType } = req.body;
+    let projections;
+
+    const site = await Site.findById(sitioId);
+    if (!site) {
+      return res.status(404).json({ message: 'Sitio no encontrado' });
     }
 
-    // Insertar las proyecciones en la base de datos
-    const savedProjections = await Projection.insertMany(projections);
+    if (fileType === 'image') {
+      projections = await ImageScrapingService.scrapeFromImage(fileUrl, sitioId);
+    } else if (fileType === 'pdf') {
+      projections = await PDFScrapingService.scrapeFromPDF(fileUrl, sitioId);
+    } else {
+      return res.status(400).json({ message: 'Tipo de archivo no soportado' });
+    }
+    
+    if (projections.length === 0) {
+      return res.status(404).json({ message: 'No se encontraron proyecciones en el archivo' });
+    }
 
-    res.status(201).json(savedProjections);
+    res.status(200).json(projections);
   } catch (error) {
-    console.error('Error al cargar proyecciones desde imagen:', error);
+    console.error('Error al cargar proyecciones desde archivo:', error);
     res.status(400).json({ message: error.message });
   }
 });

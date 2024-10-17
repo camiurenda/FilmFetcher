@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { Table, Space, Typography, Button, Modal, message, Form, Input, DatePicker, InputNumber, Select } from 'antd';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Table, Space, Typography, Button, Modal, message, Form, Input, DatePicker, InputNumber, Select, Flex } from 'antd';
+import { PoweroffOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import moment from 'moment';
-import AddProjectionModal from './addProjections'; // Asegúrate de que la ruta sea correcta
+import AddProjectionModal from './addProjections';
 import API_URL from '../../config/api';
 
 const { Title } = Typography;
@@ -19,10 +19,12 @@ const ViewProjections = () => {
   const [sitiosManual, setSitiosManual] = useState([]);
   const [manualLoadForm] = Form.useForm();
   const [form] = Form.useForm();
-  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
   const [mostrarAnteriores, setMostrarAnteriores] = useState(false);
+  const [scrapedProjections, setScrapedProjections] = useState([]);
+  const [isResultModalVisible, setIsResultModalVisible] = useState(false);
 
-  const fetchProjections = async () => {
+  const fetchProjections = useCallback(async () => {
     try {
       const endpoint = mostrarAnteriores ? '/api/projections/proyecciones-anteriores' : '/api/projections/proyecciones-actuales';
       const response = await axios.get(`${API_URL}${endpoint}`);
@@ -31,12 +33,12 @@ const ViewProjections = () => {
       console.error('Error fetching projections:', error);
       message.error('Error al cargar las proyecciones');
     }
-  };
+  }, [mostrarAnteriores]);
 
   useEffect(() => {
     fetchProjections();
     fetchSitiosManual();
-  }, [mostrarAnteriores]);
+  }, [fetchProjections]);
 
   const handleDisable = async (id) => {
     confirm({
@@ -46,9 +48,9 @@ const ViewProjections = () => {
         try {
           await axios.put(`${API_URL}/api/projections/disable/${id}`);
           message.success('Proyección deshabilitada correctamente');
-          setProjections(projections.filter(projection => projection._id !== id));
+          fetchProjections();
         } catch (error) {
-          console.error('Error disabling projection:', error);
+          console.error('Error al deshabilitar proyección:', error);
           message.error('Error al deshabilitar la proyección');
         }
       },
@@ -61,17 +63,20 @@ const ViewProjections = () => {
   };
 
   const handleManualLoad = async (values) => {
+    setLoading(true);
     try {
-      const response = await axios.post(`${API_URL}/api/projections/load-from-image`, {
-        imageUrl: values.imageUrl,
-        sitioId: values.sitioId
+      const response = await axios.post(`${API_URL}/api/projections/load-from-file`, {
+        fileUrl: values.fileUrl,
+        sitioId: values.sitioId,
+        fileType: values.fileType
       });
-      message.success('Proyecciones cargadas correctamente desde la imagen');
+      setScrapedProjections(response.data);
       setIsManualLoadModalVisible(false);
-      fetchProjections();
+      setIsResultModalVisible(true);
+      message.success('Proyecciones cargadas correctamente desde el archivo');
     } catch (error) {
-      console.error('Error al cargar proyecciones desde imagen:', error);
-      message.error('Error al cargar proyecciones desde la imagen');
+      console.error('Error al cargar proyecciones desde archivo:', error);
+      message.error('Error al cargar proyecciones desde el archivo');
     }
   };
 
@@ -83,6 +88,11 @@ const ViewProjections = () => {
       console.error('Error fetching sitios manuales:', error);
       message.error('Error al cargar los sitios de carga manual');
     }
+  };
+
+  const handleResultModalClose = () => {
+    setIsResultModalVisible(false);
+    fetchProjections();
   };
 
   const showEditModal = (record) => {
@@ -101,13 +111,13 @@ const ViewProjections = () => {
 
   const handleEdit = async (values) => {
     try {
-      const response = await axios.put(`${API_URL}/api/projections/${editingProjection._id}`, {
+      await axios.put(`${API_URL}/api/projections/${editingProjection._id}`, {
         ...values,
         fechaHora: values.fechaHora.toISOString(),
       });
       message.success('Proyección actualizada correctamente');
       setIsEditModalVisible(false);
-      setProjections(projections.map(p => p._id === editingProjection._id ? response.data : p));
+      fetchProjections(); // Actualizar la grilla después de editar
     } catch (error) {
       console.error('Error updating projection:', error);
       message.error('Error al actualizar la proyección');
@@ -116,10 +126,10 @@ const ViewProjections = () => {
 
   const handleAdd = async (values) => {
     try {
-      const response = await axios.post(`${API_URL}/api/projections/add`, values);
+      await axios.post(`${API_URL}/api/projections/add`, values);
       message.success('Proyección agregada correctamente');
       setIsAddModalVisible(false);
-      setProjections([...projections, response.data]);
+      fetchProjections();
     } catch (error) {
       console.error('Error adding projection:', error);
       message.error('Error al agregar la proyección');
@@ -184,20 +194,25 @@ const ViewProjections = () => {
       render: (fechaHora) => moment(fechaHora).format('DD-MM-YYYY HH:mm'),
     },
     {
-      title: 'Cine',
-      dataIndex: 'nombreCine',
-      key: 'nombreCine',
+      title: 'Director',
+      dataIndex: 'director',
+      key: 'director',
     },
     {
-      title: 'Sala',
-      dataIndex: 'sala',
-      key: 'sala',
+      title: 'Género',
+      dataIndex: 'genero',
+      key: 'genero',
     },
     {
       title: 'Duración',
       dataIndex: 'duracion',
       key: 'duracion',
       render: (duracion) => `${duracion} min`,
+    },
+    {
+      title: 'Sala',
+      dataIndex: 'sala',
+      key: 'sala',
     },
     {
       title: 'Precio',
@@ -236,10 +251,10 @@ const ViewProjections = () => {
     <AuthWrapper>
       <div style={{ padding: '24px', background: '#141414', borderRadius: '8px', overflow: 'auto' }}>
         <Title level={2} style={{ color: '#fff', marginBottom: '24px' }}>Cartelera</Title>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'flex-end', 
-          marginBottom: '20px', 
+        <div style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          marginBottom: '20px',
           gap: '10px'
         }}>
           <Button
@@ -252,7 +267,7 @@ const ViewProjections = () => {
             Agregar
           </Button>
           <Button type="primary" onClick={showManualLoadModal}>
-            Carga Manual desde Imagen
+            Carga Manual desde Archivo
           </Button>
           <Button type="primary" onClick={showExportModal}>
             Exportar a CSV
@@ -270,7 +285,6 @@ const ViewProjections = () => {
             showQuickJumper: true,
           }}
         />
-
         <Modal
           title="Editar Proyección"
           open={isEditModalVisible}
@@ -318,7 +332,7 @@ const ViewProjections = () => {
         />
 
         <Modal
-          title="Carga Manual desde Imagen"
+          title="Carga Manual desde Archivo"
           open={isManualLoadModalVisible}
           onCancel={() => setIsManualLoadModalVisible(false)}
           footer={null}
@@ -329,9 +343,9 @@ const ViewProjections = () => {
             layout="vertical"
           >
             <Form.Item
-              name="imageUrl"
-              label="URL de la Imagen"
-              rules={[{ required: true, message: 'Por favor ingrese la URL de la imagen' }]}
+              name="fileUrl"
+              label="URL del Archivo"
+              rules={[{ required: true, message: 'Por favor ingrese la URL del archivo' }]}
             >
               <Input />
             </Form.Item>
@@ -346,12 +360,46 @@ const ViewProjections = () => {
                 ))}
               </Select>
             </Form.Item>
+            <Form.Item
+              name="fileType"
+              label="Tipo de Archivo"
+              rules={[{ required: true, message: 'Por favor seleccione el tipo de archivo' }]}
+            >
+              <Select>
+                <Select.Option value="image">Imagen</Select.Option>
+                <Select.Option value="pdf">PDF</Select.Option>
+              </Select>
+            </Form.Item>
             <Form.Item>
-              <Button type="primary" htmlType="submit">
-                Cargar Proyecciones desde Imagen
-              </Button>
+              <Flex gap="small" wrap>
+                <Button
+                  type="primary"
+                  icon={<PoweroffOutlined />}
+                  loading={loading}
+                  onClick={() => manualLoadForm.submit()}
+                >
+                  Cargar Proyecciones desde archivo
+                </Button>
+              </Flex>
             </Form.Item>
           </Form>
+        </Modal>
+        <Modal
+          title="Resultados del Scraping"
+          open={isResultModalVisible}
+          onCancel={handleResultModalClose}
+          footer={[
+            <Button key="close" onClick={handleResultModalClose}>
+              Cerrar
+            </Button>
+          ]}
+          width={1000}
+        >
+          <Table
+            columns={columns}
+            dataSource={scrapedProjections}
+            rowKey={(record) => `${record.nombrePelicula}-${record.fechaHora}`}
+          />
         </Modal>
       </div>
     </AuthWrapper>
