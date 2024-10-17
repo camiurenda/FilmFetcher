@@ -13,19 +13,23 @@ class ScrapingService {
   constructor() {
     this.jobs = {};
     this.openaiApiKey = process.env.OPENAI_API_KEY;
+    this.lastRunTimes = {};
   }
 
   async initializeJobs() {
+    console.log('Iniciando inicialización de trabajos de scraping...');
     const sites = await Site.find({ activoParaScraping: true });
     sites.forEach(site => this.scheduleJob(site));
     console.log(`Inicializados ${sites.length} trabajos de scraping.`);
 
     this.setupSiteChangeObserver();
+    console.log('Observador de cambios de sitios configurado.');
   }
 
   setupSiteChangeObserver() {
     const siteChangeStream = Site.watch();
     siteChangeStream.on('change', async (change) => {
+      console.log('Detectado cambio en sitio:', change);
       if (change.operationType === 'insert' || change.operationType === 'update') {
         const updatedSite = await Site.findById(change.documentKey._id);
         if (updatedSite && updatedSite.activoParaScraping) {
@@ -41,13 +45,21 @@ class ScrapingService {
 
   scheduleJob(site) {
     const cronExpression = this.getCronExpression(site.frecuenciaActualizacion);
-    if (!cronExpression) return;
+    if (!cronExpression) {
+      console.log(`No se pudo obtener expresión cron para ${site.nombre}`);
+      return;
+    }
 
     if (this.jobs[site._id]) {
+      console.log(`Deteniendo job existente para ${site.nombre}`);
       this.jobs[site._id].stop();
     }
 
-    this.jobs[site._id] = cron.schedule(cronExpression, () => this.scrapeSite(site));
+    this.jobs[site._id] = cron.schedule(cronExpression, () => {
+      console.log(`Ejecutando job programado para ${site.nombre}`);
+      this.scrapeSite(site);
+    });
+    this.lastRunTimes[site._id] = new Date();
     console.log(`Job programado o actualizado para ${site.nombre}: ${cronExpression}`);
   }
 
@@ -60,6 +72,7 @@ class ScrapingService {
     };
     return expresiones[frecuencia];
   }
+
 
   async scrapeSite(site) {
     console.log(`==================== INICIO DE SCRAPING PARA ${site.nombre} ====================`);
@@ -352,6 +365,21 @@ class ScrapingService {
 
     return proximoScraping;
   }
+
+  async getDiagnosticInfo() {
+    const sites = await Site.find({ activoParaScraping: true });
+    return sites.map(site => ({
+      id: site._id,
+      nombre: site.nombre,
+      frecuencia: site.frecuenciaActualizacion,
+      ultimaEjecucion: this.lastRunTimes[site._id] || 'Nunca',
+      jobActivo: !!this.jobs[site._id],
+      proximaEjecucion: this.jobs[site._id] ? this.jobs[site._id].nextDate().toDate() : 'No programado'
+    }));
+  }
 }
+
+module.exports = new ScrapingService();
+
 
 module.exports = new ScrapingService();
