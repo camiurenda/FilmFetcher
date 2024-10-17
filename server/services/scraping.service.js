@@ -14,6 +14,9 @@ class ScrapingService {
     this.jobs = {};
     this.openaiApiKey = process.env.OPENAI_API_KEY;
     this.lastRunTimes = {};
+    this.nextScheduledRuns = {};
+    this.isVercelEnvironment = process.env.VERCEL_ENV !== undefined;
+    console.log(`Entorno de ejecución: ${this.isVercelEnvironment ? 'Vercel' : 'No Vercel'}`);
   }
 
   async initializeJobs() {
@@ -24,6 +27,29 @@ class ScrapingService {
 
     this.setupSiteChangeObserver();
     console.log('Observador de cambios de sitios configurado.');
+
+    if (this.isVercelEnvironment) {
+      this.setupPeriodicCheck();
+    }
+  }
+
+  setupPeriodicCheck() {
+    setInterval(async () => {
+      console.log('Realizando verificación periódica de jobs...');
+      const sites = await Site.find({ activoParaScraping: true });
+      sites.forEach(site => {
+        const now = new Date();
+        const lastRun = this.lastRunTimes[site._id];
+        const timeSinceLastRun = lastRun ? (now - lastRun) / 1000 : Infinity;
+
+        console.log(`Sitio ${site.nombre}: Última ejecución hace ${timeSinceLastRun} segundos`);
+
+        if (site.frecuenciaActualizacion === 'test' && timeSinceLastRun > 70) {
+          console.log(`Forzando ejecución para ${site.nombre} debido a inactividad`);
+          this.scrapeSite(site);
+        }
+      });
+    }, 60000);
   }
 
   setupSiteChangeObserver() {
@@ -55,12 +81,26 @@ class ScrapingService {
       this.jobs[site._id].stop();
     }
 
+    console.log(`Programando job para ${site.nombre} con expresión: ${cronExpression}`);
     this.jobs[site._id] = cron.schedule(cronExpression, () => {
       console.log(`Ejecutando job programado para ${site.nombre}`);
       this.scrapeSite(site);
+    }, {
+      scheduled: true,
+      timezone: "UTC"
     });
-    this.lastRunTimes[site._id] = new Date();
-    console.log(`Job programado o actualizado para ${site.nombre}: ${cronExpression}`);
+
+    this.updateNextScheduledRun(site._id, cronExpression);
+
+    if (site.frecuenciaActualizacion === 'test') {
+      console.log(`Forzando ejecución inmediata para ${site.nombre}`);
+      this.scrapeSite(site);
+    }
+  }
+
+  updateNextScheduledRun(siteId, cronExpression) {
+    const interval = cron.parseExpression(cronExpression);
+    this.nextScheduledRuns[siteId] = interval.next().toDate();
   }
 
   getCronExpression(frecuencia) {
@@ -73,10 +113,10 @@ class ScrapingService {
     return expresiones[frecuencia];
   }
 
-
   async scrapeSite(site) {
     console.log(`==================== INICIO DE SCRAPING PARA ${site.nombre} ====================`);
-    console.log(`Iniciando scraping para ${site.nombre} (${site.url})`);
+    console.log(`Iniciando scraping para ${site.nombre} (${site.url}) en ${new Date().toISOString()}`);
+    this.lastRunTimes[site._id] = new Date();
     let browser;
     let respuestaOpenAI = '';
     let causaFallo = '';
@@ -183,7 +223,7 @@ class ScrapingService {
         }
       ]
     }
-    Si no encuentras nada, devuelve un array vacío. Asume que el año es el actual, salvo que sea explicito que no lo es. Devuelve SOLO el JSON con los titulos en propercase, sin ningún texto adicional ni marcadores de código como \`\`\`json.`;
+    Si no encuentras nada, devuelve un array vacío. Asume que el año es el actual (2024), salvo que sea explicito que no lo es. Devuelve SOLO el JSON con los titulos en propercase, sin ningún texto adicional ni marcadores de código como \`\`\`json.`;
 
     try {
       const response = await axios.post(
@@ -280,7 +320,6 @@ class ScrapingService {
       causaFallo
     });
   }
-
   updateJob(site) {
     if (site.activoParaScraping) {
       this.scheduleJob(site);
@@ -367,19 +406,25 @@ class ScrapingService {
   }
 
   async getDiagnosticInfo() {
+    console.log('Obteniendo información de diagnóstico de scraping...');
     const sites = await Site.find({ activoParaScraping: true });
-    return sites.map(site => ({
-      id: site._id,
-      nombre: site.nombre,
-      frecuencia: site.frecuenciaActualizacion,
-      ultimaEjecucion: this.lastRunTimes[site._id] || 'Nunca',
-      jobActivo: !!this.jobs[site._id],
-      proximaEjecucion: this.jobs[site._id] ? this.jobs[site._id].nextDate().toDate() : 'No programado'
-    }));
+    return sites.map(site => {
+      const jobInfo = this.jobs[site._id];
+      const lastRun = this.lastRunTimes[site._id];
+      const nextRun = this.nextScheduledRuns[site._id];
+      return {
+        id: site._id,
+        nombre: site.nombre,
+        frecuencia: site.frecuenciaActualizacion,
+        ultimaEjecucion: lastRun ? lastRun.toISOString() : 'Nunca',
+        tiempoDesdeUltimaEjecucion: lastRun ? `${Math.round((new Date() - lastRun) / 1000)} segundos` : 'N/A',
+        jobActivo: !!jobInfo,
+        proximaEjecucion: nextRun ? nextRun.toISOString() : 'No programado',
+        expresionCron: this.getCronExpression(site.frecuenciaActualizacion),
+        entorno: this.isVercelEnvironment ? 'Vercel' : 'Desarrollo local'
+      };
+    });
   }
 }
-
-module.exports = new ScrapingService();
-
 
 module.exports = new ScrapingService();
