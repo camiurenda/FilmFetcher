@@ -170,7 +170,7 @@ class ScrapingService {
         }
       ]
     }
-    Si no encuentras nada, devuelve un array vacío. Devuelve SOLO el JSON con los titulos en propercase, sin ningún texto adicional ni marcadores de código como \`\`\`json.`;
+    Si no encuentras nada, devuelve un array vacío. Asume que el año es el actual, salvo que sea explicito que no lo es. Devuelve SOLO el JSON con los titulos en propercase, sin ningún texto adicional ni marcadores de código como \`\`\`json.`;
 
     try {
       const response = await axios.post(
