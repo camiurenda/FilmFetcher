@@ -153,4 +153,14 @@ router.put('/enable/:id', async (req, res) => {
   }
 });
 
+router.get('/scraping-diagnostic', async (req, res) => {
+  try {
+    const diagnosticInfo = await ScrapingService.getDiagnosticInfo();
+    res.status(200).json(diagnosticInfo);
+  } catch (error) {
+    console.error('Error al obtener información de diagnóstico:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;
