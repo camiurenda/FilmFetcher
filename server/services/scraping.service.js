@@ -1,4 +1,5 @@
 const puppeteer = require('puppeteer-core');
+const chromium = require('chrome-aws-lambda');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const cron = require('node-cron');
