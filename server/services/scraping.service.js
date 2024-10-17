@@ -44,73 +44,40 @@ class ScrapingService {
 
         console.log(`Sitio ${site.nombre}: Última ejecución hace ${timeSinceLastRun} segundos`);
 
-        if (site.frecuenciaActualizacion === 'test' && timeSinceLastRun > 70) {
-          console.log(`Forzando ejecución para ${site.nombre} debido a inactividad`);
+        if (this.shouldRunScraping(site, timeSinceLastRun)) {
+          console.log(`Ejecutando scraping para ${site.nombre}`);
           this.scrapeSite(site);
         }
       });
-    }, 60000);
+    }, 60000); // Verificar cada minuto
   }
 
-  setupSiteChangeObserver() {
-    const siteChangeStream = Site.watch();
-    siteChangeStream.on('change', async (change) => {
-      console.log('Detectado cambio en sitio:', change);
-      if (change.operationType === 'insert' || change.operationType === 'update') {
-        const updatedSite = await Site.findById(change.documentKey._id);
-        if (updatedSite && updatedSite.activoParaScraping) {
-          this.updateJob(updatedSite);
-        } else if (this.jobs[change.documentKey._id]) {
-          this.removeJob(change.documentKey._id);
-        }
-      } else if (change.operationType === 'delete') {
-        this.removeJob(change.documentKey._id);
-      }
-    });
+  shouldRunScraping(site, timeSinceLastRun) {
+    switch (site.frecuenciaActualizacion) {
+      case 'test':
+        return timeSinceLastRun > 60; // Cada minuto
+      case 'diaria':
+        return timeSinceLastRun > 86400; // 24 horas
+      case 'semanal':
+        return timeSinceLastRun > 604800; // 7 días
+      case 'mensual':
+        return timeSinceLastRun > 2592000; // 30 días
+      default:
+        return false;
+    }
   }
 
   scheduleJob(site) {
-    const cronExpression = this.getCronExpression(site.frecuenciaActualizacion);
-    if (!cronExpression) {
-      console.log(`No se pudo obtener expresión cron para ${site.nombre}`);
-      return;
-    }
-
-    if (this.jobs[site._id]) {
-      console.log(`Deteniendo job existente para ${site.nombre}`);
-      this.jobs[site._id].stop();
-    }
-
-    console.log(`Programando job para ${site.nombre} con expresión: ${cronExpression}`);
-    this.jobs[site._id] = cron.schedule(cronExpression, () => {
-      console.log(`Ejecutando job programado para ${site.nombre}`);
-      this.scrapeSite(site);
-    }, {
-      scheduled: true,
-      timezone: "UTC"
-    });
-
-    this.updateNextScheduledRun(site._id, cronExpression);
+    console.log(`Programando job para ${site.nombre}`);
+    this.jobs[site._id] = {
+      site: site,
+      lastRun: null
+    };
 
     if (site.frecuenciaActualizacion === 'test') {
       console.log(`Forzando ejecución inmediata para ${site.nombre}`);
       this.scrapeSite(site);
     }
-  }
-
-  updateNextScheduledRun(siteId, cronExpression) {
-    const interval = cron.parseExpression(cronExpression);
-    this.nextScheduledRuns[siteId] = interval.next().toDate();
-  }
-
-  getCronExpression(frecuencia) {
-    const expresiones = {
-      diaria: '0 0 * * *',
-      semanal: '0 0 * * 0',
-      mensual: '0 0 1 * *',
-      test: '*/1 * * * *'
-    };
-    return expresiones[frecuencia];
   }
 
   async scrapeSite(site) {
@@ -320,6 +287,7 @@ class ScrapingService {
       causaFallo
     });
   }
+
   updateJob(site) {
     if (site.activoParaScraping) {
       this.scheduleJob(site);
