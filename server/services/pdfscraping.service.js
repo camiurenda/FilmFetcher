@@ -73,7 +73,7 @@ class PDFScrapingService {
         }
       ]
     }
-    Si no encuentras información para algún campo, puedes inferirlo de internet. Devuelve SOLO el JSON con los datos en propercase, sin ningún otro texto o formato adicional.`;
+    Si no encuentras nada, devuelve un array vacío. Asume que la funcion es en el año actual (2024) salvo que se exprese lo contrario. Devuelve SOLO el JSON con los datos en propercase, sin ningún otro texto o formato adicional.`;
 
     try {
       const response = await axios.post(
