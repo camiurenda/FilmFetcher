@@ -68,26 +68,22 @@ class ScrapingService {
     let causaFallo = '';
     try {
       browser = await puppeteer.launch({
-        headless: 'new',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--disable-gpu'
-        ],
-        defaultViewport: null
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath,
+        headless: chromium.headless,
+        ignoreHTTPSErrors: true,
       });
       const page = await browser.newPage();
       
       await page.goto(site.url, { 
         waitUntil: 'networkidle0',
-        timeout: 60000
+        timeout: 30000
       });
 
       const htmlContent = await page.content();
+      await browser.close();
+
       const extractedInfo = this.extractBasicInfo(htmlContent);
       const openAIResponse = await this.openAIScrape(site, extractedInfo);
       respuestaOpenAI = JSON.stringify(openAIResponse);
@@ -123,7 +119,7 @@ class ScrapingService {
       console.error('Stack trace completo:', error.stack);
       await this.updateSiteAndHistory(site._id, 'fallido', error.message, 0, respuestaOpenAI, causaFallo);
     } finally {
-      if (browser) {
+      if (browser && browser.isConnected()) {
         await browser.close();
       }
     }

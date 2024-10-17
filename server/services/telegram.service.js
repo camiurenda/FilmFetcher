@@ -1,5 +1,5 @@
 const TelegramBot = require('node-telegram-bot-api');
-const ChatbotServiceMejorado = require('./chatbot-service-mejorado');
+const ChatbotService = require('./chatbot.service');
 
 class TelegramService {
   constructor() {

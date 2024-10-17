@@ -2,7 +2,7 @@ const { OpenAI } = require('openai');
 const Projection = require('../models/projection.model');
 const Site = require('../models/site.model');
 
-class ChatbotServiceMejorado {
+class ChatbotService {
   constructor() {
     this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   }
@@ -56,8 +56,8 @@ class ChatbotServiceMejorado {
     Actualmente, estas son las películas en cartelera: ${peliculasInfo}.
     Los cines disponibles son: ${sitiosInfo}.
     Responde de manera amable y concisa a las preguntas de los usuarios sobre estas películas, cines, horarios o cualquier otra consulta relacionada con el cine.
-    Si te preguntan por una película que no está en la lista, puedes sugerir alguna de las que sí están disponibles.`;
+    Si te preguntan por una película que no está en la lista, puedes sugerir alguna de las que sí están disponibles. Redirige amablemente preguntas que se vayan de la`;
   }
 }
 
-module.exports = new ChatbotServiceMejorado();
+module.exports = new ChatbotService();
