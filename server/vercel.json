@@ -4,9 +4,17 @@
     {
       "src": "api/index.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/telegram-webhook.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
+    {
+      "src": "/api/telegram-webhook",
+      "dest": "/api/telegram-webhook.js"
+    },
     {
       "src": "/(.*)",
       "dest": "/api/index.js"

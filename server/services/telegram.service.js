@@ -7,6 +7,14 @@ class TelegramService {
     this.initializeBot();
   }
 
+  async handleUpdate(update) {
+    try {
+      await this.bot.processUpdate(update);
+    } catch (error) {
+      console.error('Error procesando actualización de Telegram:', error);
+    }
+  }
+  
   initializeBot() {
     this.bot.onText(/\/start/, (msg) => {
       const chatId = msg.chat.id;
