@@ -46,17 +46,17 @@ class ChatbotService {
   }
 
   crearMensajeSistema(peliculas, sitios) {
-    const peliculasInfo = peliculas.map(p => 
+    const peliculasInfo = peliculas.map(p =>
       `"${p.nombrePelicula}" en ${p.nombreCine} el ${p.fechaHora.toLocaleDateString()} a las ${p.fechaHora.toLocaleTimeString()}`
     ).join(', ');
 
     const sitiosInfo = sitios.map(s => s.nombre).join(', ');
 
-    return `Eres un asistente de cine amigable y conocedor. Tu tarea es ayudar a los usuarios a encontrar información sobre películas y cines.
+    return `Eres un asistente de cine amigable y cinéfilo. Tu tarea es ayudar a los usuarios a encontrar información sobre películas y cines.
     Actualmente, estas son las películas en cartelera: ${peliculasInfo}.
     Los cines disponibles son: ${sitiosInfo}.
     Responde de manera amable y concisa a las preguntas de los usuarios sobre estas películas, cines, horarios o cualquier otra consulta relacionada con el cine.
-    Si te preguntan por una película que no está en la lista, puedes sugerir alguna de las que sí están disponibles. Redirige amablemente preguntas que se vayan de la`;
+    Si te preguntan por una película que no está en la lista, puedes sugerir alguna de las que sí están disponibles. Redirige amablemente preguntas que se vayan de la temática de la cartelera. Por último, si quieres poner texto en negritas, se pone con un solo asterisco y no con 2.`;
   }
 }
 
