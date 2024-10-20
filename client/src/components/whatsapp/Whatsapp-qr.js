@@ -8,7 +8,7 @@ const WhatsAppQR = () => {
   const [status, setStatus] = useState('connecting');
 
   useEffect(() => {
-    const ws = new WebSocket(`${process.env.REACT_APP_WS_URL || 'ws://localhost:5000'}`);
+    const ws = new WebSocket(`${process.env.REACT_APP_API_URL || 'ws://localhost:5000'}`);
 
     ws.onopen = () => {
       console.log('Conexión WebSocket establecida');
