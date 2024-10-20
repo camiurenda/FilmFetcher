@@ -33,15 +33,24 @@ class TelegramService {
       const message = update.message;
       if (message && message.text && message.from && !message.from.is_bot) {
         const chatId = message.chat.id;
-        let respuesta;
+        console.log(`Mensaje recibido de chatId: ${chatId}, texto: "${message.text}"`);
 
+        // Verificar si el mensaje es del propio bot
+        if (message.from.first_name === "FilmFetcher Bot") {
+          console.log('Mensaje del propio bot, ignorando para evitar bucle');
+          return;
+        }
+
+        let respuesta;
         if (message.text === '/start') {
           respuesta = '¡Bienvenido a FilmFetcher Bot! Estoy aquí para ayudarte con información sobre películas y cines. ¿Qué te gustaría saber?';
         } else {
+          console.log('Solicitando respuesta a ChatbotService');
           respuesta = await ChatbotService.procesarMensaje(message.text);
         }
 
-        console.log(`Enviando respuesta a ${chatId}: ${respuesta}`);
+        console.log(`Respuesta generada: "${respuesta}"`);
+        console.log(`Enviando respuesta a ${chatId}`);
         await this.bot.sendMessage(chatId, respuesta);
         console.log('Respuesta enviada con éxito');
       } else {

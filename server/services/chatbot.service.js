@@ -9,11 +9,15 @@ class ChatbotService {
 
   async procesarMensaje(mensaje) {
     try {
-      console.log('Procesando mensaje:', mensaje);
+      console.log('ChatbotService: Procesando mensaje:', mensaje);
       const peliculasActuales = await this.obtenerPeliculasActuales();
+      console.log('Películas actuales obtenidas:', peliculasActuales.length);
       const sitios = await this.obtenerSitios();
+      console.log('Sitios obtenidos:', sitios.length);
       const systemMessage = this.crearMensajeSistema(peliculasActuales, sitios);
+      console.log('Mensaje del sistema creado');
 
+      console.log('Solicitando respuesta a OpenAI');
       const completion = await this.openai.chat.completions.create({
         model: "gpt-4o-mini", // Asegúrate de que este modelo sea correcto
         messages: [
@@ -23,10 +27,15 @@ class ChatbotService {
         max_tokens: 2000
       });
 
-      console.log('Respuesta generada:', completion.choices[0].message.content);
-      return completion.choices[0].message.content;
+      console.log('Respuesta de OpenAI recibida');
+      const respuesta = completion.choices[0].message.content;
+      console.log('Respuesta generada:', respuesta);
+      return respuesta;
     } catch (error) {
       console.error('Error al procesar mensaje en ChatbotService:', error);
+      if (error.response) {
+        console.error('Detalles del error de OpenAI:', error.response.data);
+      }
       return "Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo más tarde.";
     }
   }
