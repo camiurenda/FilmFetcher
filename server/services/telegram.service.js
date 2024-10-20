@@ -31,7 +31,7 @@ class TelegramService {
     try {
       console.log('Procesando actualización de Telegram:', JSON.stringify(update));
       const message = update.message;
-      if (message && message.text) {
+      if (message && message.text && message.from && !message.from.is_bot) {
         const chatId = message.chat.id;
         let respuesta;
 
@@ -41,13 +41,17 @@ class TelegramService {
           respuesta = await ChatbotService.procesarMensaje(message.text);
         }
 
+        console.log(`Enviando respuesta a ${chatId}: ${respuesta}`);
         await this.bot.sendMessage(chatId, respuesta);
-        console.log('Respuesta enviada:', respuesta);
+        console.log('Respuesta enviada con éxito');
+      } else {
+        console.log('Mensaje ignorado: no es de un usuario o no contiene texto');
       }
     } catch (error) {
       console.error('Error procesando actualización de Telegram:', error);
     }
   }
+
 
   async checkStatus() {
     try {
