@@ -1,6 +1,7 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const puppeteer = require('puppeteer-core');
+const chrome = require('chrome-aws-lambda');
 const path = require('path');
 const fs = require('fs').promises;
 const OpenAI = require('openai');
@@ -11,25 +12,44 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 let wss;
 
-const getPuppeteerOptions = () => ({
-  headless: "new",
-  args: [
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-dev-shm-usage',
-    '--disable-accelerated-2d-canvas',
-    '--no-first-run',
-    '--no-zygote',
-    '--single-process',
-    '--disable-gpu'
-  ],
-  defaultViewport: null,
-  ignoreHTTPSErrors: true,
-  timeout: 60000
-});
+const getPuppeteerOptions = async () => {
+  let options;
+  if (process.env.NODE_ENV === 'production') {
+    options = {
+      args: chrome.args,
+      executablePath: await chrome.executablePath,
+      headless: chrome.headless,
+    };
+  } else {
+    options = {
+      args: [],
+      executablePath: puppeteer.executablePath(),
+      headless: true,
+    };
+  }
+  return {
+    ...options,
+    headless: "new",
+    args: [
+      ...options.args,
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process',
+      '--disable-gpu'
+    ],
+    defaultViewport: null,
+    ignoreHTTPSErrors: true,
+    timeout: 60000
+  };
+};
 
 const initializeWhatsAppClient = async () => {
-  const browser = await puppeteer.launch(getPuppeteerOptions());
+  const options = await getPuppeteerOptions();
+  const browser = await puppeteer.launch(options);
   const authStrategy = new LocalAuth({
     clientId: "film-fetcher-whatsapp-bot",
     dataPath: path.join(process.cwd(), '.wwebjs_auth')
@@ -108,20 +128,25 @@ const initialize = async (server, websocketServer) => {
   wss = websocketServer;
   try {
     // Intenta eliminar la carpeta de autenticación si existe
-    await fs.rmdir(path.join(process.cwd(), '.wwebjs_auth'), { recursive: true });
-  } catch (error) {
-    console.error('Error al intentar eliminar la carpeta de autenticación:', error);
-  }
+    try {
+      await fs.rm(path.join(process.cwd(), '.wwebjs_auth'), { recursive: true, force: true });
+    } catch (error) {
+      console.error('Error al intentar eliminar la carpeta de autenticación:', error);
+    }
 
-  try {
     const client = await initializeWhatsAppClient();
     await client.initialize();
   } catch (error) {
     console.error('Error al inicializar el cliente de WhatsApp:', error);
+    // Intenta reiniciar el cliente si falla la inicialización
     setTimeout(async () => {
       console.log('Intentando reiniciar el cliente de WhatsApp...');
-      const client = await initializeWhatsAppClient();
-      await client.initialize();
+      try {
+        const client = await initializeWhatsAppClient();
+        await client.initialize();
+      } catch (retryError) {
+        console.error('Error al reiniciar el cliente de WhatsApp:', retryError);
+      }
     }, 5000);
   }
 };
