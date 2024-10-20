@@ -1,5 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const ChatbotService = require('./chatbot.service');
+const axios = require('axios');
+
 
 class TelegramService {
   constructor() {

@@ -9,7 +9,11 @@ const ScrapingService = require('../services/scraping.service');
 const statsRoutes = require('../routes/stats.routes');
 const TelegramService = require('../services/telegram.service');
 
+
 require('dotenv').config();
+
+// Asegurarse de que la URL del backend no tenga barras duplicadas
+process.env.BACKEND_URL = process.env.BACKEND_URL.replace(/\/+$/, '');
 
 const config = {
   authRequired: false,
@@ -22,6 +26,8 @@ const config = {
 
 const app = express();
 
+// Configuración mejorada de morgan para registro detallado
+morgan.token('body', (req) => JSON.stringify(req.body));
 morgan.token('custom-log', (req, res) => {
   if (res.locals.customLog) {
     const log = res.locals.customLog;
@@ -31,7 +37,8 @@ morgan.token('custom-log', (req, res) => {
   return '';
 });
 
-app.use(morgan(':method :url :status :response-time ms :custom-log'));
+app.use(morgan(':method :url :status :response-time ms - :res[content-length] :body - :req[content-length] :custom-log'));
+
 app.use(express.json());
 app.use(auth(config));
 
@@ -59,6 +66,7 @@ app.use('/api/sites', siteRoutes);
 app.use('/api/projections', projectionRoutes);
 app.use('/api/stats', statsRoutes);
 
+// Sobrescribir console.log para capturar logs personalizados
 const originalConsoleLog = console.log;
 console.log = (...args) => {
   if (args.length) {
@@ -88,13 +96,13 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'El backend de Film Fetcher está funcionando correctamente.' });
 });
 
-app.get('/api/telegram-status', async (req, res) => {
+app.get('/api/bot-status', async (req, res) => {
   try {
-    const status = await TelegramService.checkStatus();
-    res.json({ status });
+    const botInfo = await TelegramService.getBotInfo();
+    res.json({ status: 'OK', botInfo });
   } catch (error) {
-    console.error('Error al verificar el estado del bot de Telegram:', error);
-    res.status(500).json({ error: 'Error al verificar el estado del bot de Telegram' });
+    console.error('Error al obtener información del bot:', error);
+    res.status(500).json({ status: 'Error', message: error.message });
   }
 });
 
@@ -105,11 +113,19 @@ const initializeServices = async () => {
     console.log('Conectado exitosamente a MongoDB');
     await ScrapingService.initializeJobs();
     console.log('Trabajos de scraping inicializados');
+    await TelegramService.setupWebhook();
+    console.log('Webhook de Telegram configurado');
   } catch (err) {
     console.error('Error durante la inicialización:', err);
   }
 };
 
 initializeServices();
+
+// Manejador de errores global
+app.use((err, req, res, next) => {
+  console.error('Error no manejado:', err);
+  res.status(500).json({ error: 'Error interno del servidor', details: err.message });
+});
 
 module.exports = app;
