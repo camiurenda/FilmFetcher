@@ -20,7 +20,7 @@ class ChatbotService {
           { role: "system", content: systemMessage },
           { role: "user", content: mensaje }
         ],
-        max_tokens: 500
+        max_tokens: 2000
       });
 
       console.log('Respuesta generada:', completion.choices[0].message.content);
