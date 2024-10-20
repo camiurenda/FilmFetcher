@@ -5,10 +5,12 @@ const axios = require('axios');
 class TelegramService {
   constructor() {
     this.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
-    this.setupWebhook();
+    this.webhookConfigured = false;
   }
 
-  async setupWebhook(retryCount = 0) {
+  async setupWebhook() {
+    if (this.webhookConfigured) return;
+
     const webhookUrl = `${process.env.BACKEND_URL}/api/telegram-webhook`;
     console.log('Intentando configurar webhook de Telegram en:', webhookUrl);
     
@@ -16,40 +18,31 @@ class TelegramService {
       const response = await this.bot.setWebHook(webhookUrl);
       if (response) {
         console.log('Webhook configurado exitosamente');
+        this.webhookConfigured = true;
       } else {
         throw new Error('La respuesta de Telegram no fue exitosa');
       }
     } catch (error) {
       console.error('Error al configurar webhook:', error.message);
-      
-      if (retryCount < 5) {
-        const delay = Math.pow(2, retryCount) * 1000;
-        console.log(`Reintentando en ${delay} ms...`);
-        setTimeout(() => this.setupWebhook(retryCount + 1), delay);
-      } else {
-        console.error('Máximo número de intentos alcanzado. No se pudo configurar el webhook.');
-      }
     }
   }
 
   async handleUpdate(update) {
     try {
-      console.log('Recibida actualización de Telegram:', JSON.stringify(update));
+      console.log('Procesando actualización de Telegram:', JSON.stringify(update));
       const message = update.message;
-      if (message) {
+      if (message && message.text) {
         const chatId = message.chat.id;
+        let respuesta;
 
         if (message.text === '/start') {
-          await this.bot.sendMessage(chatId, '¡Bienvenido a FilmFetcher Bot! Estoy aquí para ayudarte con información sobre películas y cines. ¿Qué te gustaría saber?');
+          respuesta = '¡Bienvenido a FilmFetcher Bot! Estoy aquí para ayudarte con información sobre películas y cines. ¿Qué te gustaría saber?';
         } else {
-          try {
-            const respuesta = await ChatbotService.procesarMensaje(message.text);
-            await this.bot.sendMessage(chatId, respuesta);
-          } catch (error) {
-            console.error('Error al procesar mensaje:', error);
-            await this.bot.sendMessage(chatId, 'Lo siento, ha ocurrido un error al procesar tu mensaje. Por favor, intenta de nuevo más tarde.');
-          }
+          respuesta = await ChatbotService.procesarMensaje(message.text);
         }
+
+        await this.bot.sendMessage(chatId, respuesta);
+        console.log('Respuesta enviada:', respuesta);
       }
     } catch (error) {
       console.error('Error procesando actualización de Telegram:', error);

@@ -9,14 +9,10 @@ class ChatbotService {
 
   async procesarMensaje(mensaje) {
     try {
-      // Obtener información actualizada de la base de datos
       const peliculasActuales = await this.obtenerPeliculasActuales();
       const sitios = await this.obtenerSitios();
-
-      // Crear un mensaje de sistema con el contexto actual
       const systemMessage = this.crearMensajeSistema(peliculasActuales, sitios);
 
-      // Procesar el mensaje del usuario con GPT
       const completion = await this.openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
