@@ -63,18 +63,25 @@ class ChatbotService {
   async obtenerPeliculasActuales() {
     console.log('Obteniendo películas actuales...');
     const fechaActual = new Date();
+    
     try {
+      const startTime = Date.now(); // Agregamos un timestamp al inicio de la consulta
       const peliculas = await Projection.find({
         habilitado: true,
         fechaHora: { $gte: fechaActual }
       }).sort({ fechaHora: 1 }).limit(20);
+  
+      const endTime = Date.now(); // Medimos el tiempo que toma la consulta
       console.log(`Películas encontradas: ${peliculas.length}`);
+      console.log(`Consulta a MongoDB tomó: ${(endTime - startTime)} ms`);
+      
       return peliculas;
     } catch (error) {
       console.error('Error al obtener películas actuales:', error);
-      throw error; // Vuelvo a lanzar el error para que sea manejado por el bloque try-catch de "procesarMensaje"
+      throw error;
     }
   }
+  
 
   async obtenerSitios() {
     console.log('Obteniendo sitios habilitados...');
