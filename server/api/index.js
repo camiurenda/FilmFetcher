@@ -8,6 +8,7 @@ const projectionRoutes = require('../routes/projection.routes');
 const ScrapingService = require('../services/scraping.service'); 
 const statsRoutes = require('../routes/stats.routes');
 const whatsappBot = require ('../services/whatsappbot.service')
+const http = require('http');
 
 require('dotenv').config();
 
@@ -21,6 +22,7 @@ const config = {
 };
 
 const app = express();
+const server = http.createServer(app);
 
 morgan.token('body', (req) => JSON.stringify(req.body));
 morgan.token('custom-log', (req, res) => {
@@ -99,6 +101,8 @@ const initializeServices = async () => {
     console.log('Conectado exitosamente a MongoDB');
     await ScrapingService.initializeJobs();
     console.log('Trabajos de scraping inicializados');
+    whatsappBot.initialize(server);
+    console.log('Servicio de WhatsApp inicializado');
   } catch (err) {
     console.error('Error durante la inicialización:', err);
   }

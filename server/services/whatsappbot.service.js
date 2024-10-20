@@ -1,21 +1,50 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const qrcode = require('qrcode');
 const OpenAI = require('openai');
 const Projection = require('../models/projection.model');
+const WebSocket = require('ws');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+let wss;
+
+const initializeWebSocket = (server) => {
+  wss = new WebSocket.Server({ server });
+  console.log('WebSocket server initialized');
+};
+
 const client = new Client({
-  authStrategy: new LocalAuth()
+  authStrategy: new LocalAuth(),
+  puppeteer: {
+    args: ['--no-sandbox'],
+  }
 });
 
-client.on('qr', (qr) => {
-  qrcode.generate(qr, { small: true });
+client.on('qr', async (qr) => {
+  try {
+    const qrImage = await qrcode.toDataURL(qr);
+    if (wss) {
+      wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ type: 'qr', data: qrImage }));
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error al generar o enviar el código QR:', error);
+  }
 });
 
 client.on('ready', () => {
   console.log('WhatsApp bot is ready!');
+  if (wss) {
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ type: 'status', data: 'ready' }));
+      }
+    });
+  }
 });
 
 client.on('message', async (msg) => {
