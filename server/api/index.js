@@ -106,7 +106,7 @@ app.get('/api/bot-status', async (req, res) => {
   }
 });
 
-router.post('/test-telegram', async (req, res) => {
+app.post('/test-telegram', async (req, res) => {
   try {
     const result = await TelegramService.runDiagnostics();
     res.json({ success: true, result });
