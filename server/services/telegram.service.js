@@ -8,42 +8,28 @@ class TelegramService {
     } else {
       console.log('TelegramService inicializado con token válido');
     }
-    this.apiUrl = `https://api.telegram.org/bot${this.token}/api/telegram-webhook`;
+    this.apiUrl = `https://api.telegram.org/bot${this.token}`;
   }
 
-  async runDiagnostics() {
+  async setupWebhook() {
     if (!this.token) {
       throw new Error('TELEGRAM_BOT_TOKEN no está configurado');
     }
 
-    const diagnostics = {
-      tokenCheck: false,
-      getMe: null,
-      sendMessage: null
-    };
+    const webhookUrl = `${process.env.VERCEL_URL}/api/telegram-webhook`;
+    console.log(`Configurando webhook en: ${webhookUrl}`);
 
     try {
-      // Verificar getMe
-      const getMeResponse = await axios.get(`${this.apiUrl}/getMe`);
-      diagnostics.tokenCheck = true;
-      diagnostics.getMe = getMeResponse.data;
-
-      // Intentar enviar un mensaje (asegúrate de tener un chat_id válido)
-      const chatId = process.env.TELEGRAM_TEST_CHAT_ID; // Debes configurar esto en tu .env
-      if (chatId) {
-        const sendMessageResponse = await axios.post(`${this.apiUrl}/sendMessage`, {
-          chat_id: chatId,
-          text: 'Este es un mensaje de prueba de diagnóstico.'
-        });
-        diagnostics.sendMessage = sendMessageResponse.data;
-      } else {
-        diagnostics.sendMessage = 'TELEGRAM_TEST_CHAT_ID no está configurado';
-      }
+      const response = await axios.post(`${this.apiUrl}/setWebhook`, {
+        url: webhookUrl
+      });
+      console.log('Webhook configurado:', response.data);
     } catch (error) {
-      throw new Error(`Error en diagnóstico: ${error.message}`);
+      console.error('Error al configurar el webhook:', error.message);
+      if (error.response) {
+        console.error('Detalles del error de la API:', error.response.data);
+      }
     }
-
-    return diagnostics;
   }
 
   async handleUpdate(update) {
