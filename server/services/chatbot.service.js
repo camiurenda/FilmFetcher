@@ -19,7 +19,7 @@ class ChatbotService {
           { role: "system", content: systemMessage },
           { role: "user", content: mensaje }
         ],
-        max_tokens: 500
+        max_tokens: 5000
       });
 
       return completion.choices[0].message.content;
