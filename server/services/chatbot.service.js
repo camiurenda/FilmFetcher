@@ -65,19 +65,18 @@ class ChatbotService {
     const fechaActual = new Date();
     
     try {
-      const startTime = Date.now(); // Agregamos un timestamp al inicio de la consulta
       const peliculas = await Projection.find({
         habilitado: true,
         fechaHora: { $gte: fechaActual }
-      }).sort({ fechaHora: 1 }).limit(20);
-  
-      const endTime = Date.now(); // Medimos el tiempo que toma la consulta
-      console.log(`Películas encontradas: ${peliculas.length}`);
-      console.log(`Consulta a MongoDB tomó: ${(endTime - startTime)} ms`);
+      })
+      .sort({ fechaHora: 1 })
+      .limit(20)
+      .maxTimeMS(60000);
       
+      console.log(`Películas encontradas: ${peliculas.length}`);
       return peliculas;
     } catch (error) {
-      console.error('Error al obtener películas actuales:', error);
+      console.error('Error en la consulta a MongoDB (timeout o fallo):', error.message);
       throw error;
     }
   }
