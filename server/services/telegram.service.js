@@ -4,9 +4,34 @@ const ChatbotService = require('./chatbot.service');
 class TelegramService {
   constructor() {
     this.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
+    this.setupWebhook();
+  }
+
+  async setupWebhook(retryCount = 0) {
     const webhookUrl = `${process.env.BACKEND_URL}/api/telegram-webhook`;
-    console.log('Configurando webhook de Telegram en:', webhookUrl);
-    this.bot.setWebHook(webhookUrl);
+    console.log('Intentando configurar webhook de Telegram en:', webhookUrl);
+    
+    try {
+      const response = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setWebhook`, {
+        url: webhookUrl
+      });
+      
+      if (response.data.ok) {
+        console.log('Webhook configurado exitosamente');
+      } else {
+        throw new Error('La respuesta de Telegram no fue exitosa');
+      }
+    } catch (error) {
+      console.error('Error al configurar webhook:', error.response ? error.response.data : error.message);
+      
+      if (retryCount < 5) {
+        const delay = Math.pow(2, retryCount) * 1000;
+        console.log(`Reintentando en ${delay} ms...`);
+        setTimeout(() => this.setupWebhook(retryCount + 1), delay);
+      } else {
+        console.error('Máximo número de intentos alcanzado. No se pudo configurar el webhook.');
+      }
+    }
   }
 
   async handleUpdate(update) {
@@ -47,6 +72,16 @@ class TelegramService {
       };
     }
   }
+  async getBotInfo() {
+    try {
+      const me = await this.bot.getMe();
+      const webhookInfo = await this.bot.getWebHookInfo();
+      return { me, webhookInfo };
+    } catch (error) {
+      console.error('Error al obtener información del bot:', error);
+      throw error;
+    }
+  }  
 }
 
 module.exports = new TelegramService();
