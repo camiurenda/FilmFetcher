@@ -106,6 +106,16 @@ app.get('/api/bot-status', async (req, res) => {
   }
 });
 
+router.post('/test-telegram', async (req, res) => {
+  try {
+    const result = await TelegramService.runDiagnostics();
+    res.json({ success: true, result });
+  } catch (error) {
+    console.error('Error en la prueba de Telegram:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Inicialización de servicios
 const initializeServices = async () => {
   try {
@@ -119,6 +129,8 @@ const initializeServices = async () => {
     console.error('Error durante la inicialización:', err);
   }
 };
+
+console.log('TELEGRAM_BOT_TOKEN cargado:', process.env.TELEGRAM_BOT_TOKEN ? 'Sí' : 'No');
 
 initializeServices();
 
