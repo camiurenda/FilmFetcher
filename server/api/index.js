@@ -7,13 +7,9 @@ const siteRoutes = require('../routes/site.routes');
 const projectionRoutes = require('../routes/projection.routes');
 const ScrapingService = require('../services/scraping.service'); 
 const statsRoutes = require('../routes/stats.routes');
-const TelegramService = require('../services/telegram.service');
-
+const whatsappBot = require ('../services/whatsappbot.service')
 
 require('dotenv').config();
-
-// Asegurarse de que la URL del backend no tenga barras duplicadas
-process.env.BACKEND_URL = process.env.BACKEND_URL.replace(/\/+$/, '');
 
 const config = {
   authRequired: false,
@@ -26,7 +22,6 @@ const config = {
 
 const app = express();
 
-// Configuración mejorada de morgan para registro detallado
 morgan.token('body', (req) => JSON.stringify(req.body));
 morgan.token('custom-log', (req, res) => {
   if (res.locals.customLog) {
@@ -96,26 +91,6 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'El backend de Film Fetcher está funcionando correctamente.' });
 });
 
-app.get('/api/bot-status', async (req, res) => {
-  try {
-    const botInfo = await TelegramService.getBotInfo();
-    res.json({ status: 'OK', botInfo });
-  } catch (error) {
-    console.error('Error al obtener información del bot:', error);
-    res.status(500).json({ status: 'Error', message: error.message });
-  }
-});
-
-app.post('/test-telegram', async (req, res) => {
-  try {
-    const result = await TelegramService.runDiagnostics();
-    res.json({ success: true, result });
-  } catch (error) {
-    console.error('Error en la prueba de Telegram:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // Inicialización de servicios
 const initializeServices = async () => {
   try {
@@ -123,14 +98,10 @@ const initializeServices = async () => {
     console.log('Conectado exitosamente a MongoDB');
     await ScrapingService.initializeJobs();
     console.log('Trabajos de scraping inicializados');
-    await TelegramService.setupWebhook();
-    console.log('Webhook de Telegram configurado');
   } catch (err) {
     console.error('Error durante la inicialización:', err);
   }
 };
-
-console.log('TELEGRAM_BOT_TOKEN cargado:', process.env.TELEGRAM_BOT_TOKEN ? 'Sí' : 'No');
 
 initializeServices();
 
