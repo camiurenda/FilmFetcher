@@ -3,37 +3,34 @@ const ChatbotService = require('./chatbot.service');
 
 class TelegramService {
   constructor() {
-    this.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
-    this.initializeBot();
+    this.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
+    const webhookUrl = `${process.env.BACKEND_URL}/api/telegram-webhook`;
+    console.log('Configurando webhook de Telegram en:', webhookUrl);
+    this.bot.setWebHook(webhookUrl);
   }
 
   async handleUpdate(update) {
     try {
-      await this.bot.processUpdate(update);
+      const message = update.message;
+      if (message) {
+        const chatId = message.chat.id;
+
+        if (message.text === '/start') {
+          await this.bot.sendMessage(chatId, '¡Bienvenido a FilmFetcher Bot! Estoy aquí para ayudarte con información sobre películas y cines. ¿Qué te gustaría saber?');
+        } else if (!message.text.startsWith('/')) {
+          try {
+            const respuesta = await ChatbotService.procesarMensaje(message.text);
+            await this.bot.sendMessage(chatId, respuesta);
+          } catch (error) {
+            console.error('Error al procesar mensaje:', error);
+            await this.bot.sendMessage(chatId, 'Lo siento, ha ocurrido un error al procesar tu mensaje. Por favor, intenta de nuevo más tarde.');
+          }
+        }
+      }
     } catch (error) {
       console.error('Error procesando actualización de Telegram:', error);
     }
   }
-  
-  initializeBot() {
-    this.bot.onText(/\/start/, (msg) => {
-      const chatId = msg.chat.id;
-      this.bot.sendMessage(chatId, '¡Bienvenido a FilmFetcher Bot! Estoy aquí para ayudarte con información sobre películas y cines. ¿Qué te gustaría saber?');
-    });
-
-    this.bot.on('message', async (msg) => {
-      const chatId = msg.chat.id;
-      if (msg.text.startsWith('/')) return; // Ignorar otros comandos
-
-      try {
-        const respuesta = await ChatbotService.procesarMensaje(msg.text);
-        this.bot.sendMessage(chatId, respuesta);
-      } catch (error) {
-        console.error('Error al procesar mensaje:', error);
-        this.bot.sendMessage(chatId, 'Lo siento, ha ocurrido un error al procesar tu mensaje. Por favor, intenta de nuevo más tarde.');
-      }
-    });
-  }
 }
 
-module.exports = TelegramService;
+module.exports = new TelegramService();

@@ -95,7 +95,6 @@ const initializeServices = async () => {
     console.log('Conectado exitosamente a MongoDB');
     await ScrapingService.initializeJobs();
     console.log('Trabajos de scraping inicializados');
-    new TelegramService();
   } catch (err) {
     console.error('Error durante la inicialización:', err);
   }
