@@ -3,6 +3,7 @@ const chrome = require('chrome-aws-lambda');
 const fs = require('fs').promises;
 const path = require('path');
 const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode');
 
 const getPuppeteerOptions = async () => {
   let options;
