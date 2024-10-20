@@ -12,7 +12,7 @@ const http = require('http');
 const WebSocket = require('ws');
 
 require('dotenv').config();
-require('./puppeteer.config.cjs');
+require('../puppeteer.config.cjs');
 
 
 const config = {
