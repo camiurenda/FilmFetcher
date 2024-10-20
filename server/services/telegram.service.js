@@ -1,9 +1,10 @@
 const TelegramBot = require('node-telegram-bot-api');
-const ChatbotService = require('./chatbot.service');
+const axios = require('axios');
 
 class TelegramService {
   constructor() {
     this.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
+    this.apiUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
   }
 
   async handleUpdate(update) {
@@ -27,22 +28,37 @@ class TelegramService {
         console.log(`Intentando enviar respuesta a ${chatId}`);
         
         try {
-          const sentMessage = await this.bot.sendMessage(chatId, respuesta);
-          console.log('Respuesta enviada con éxito:', JSON.stringify(sentMessage));
+          console.log('Iniciando solicitud a la API de Telegram');
+          const response = await axios.post(`${this.apiUrl}/sendMessage`, {
+            chat_id: chatId,
+            text: respuesta
+          });
+          console.log('Respuesta de la API de Telegram:', JSON.stringify(response.data));
+          if (response.data.ok) {
+            console.log('Mensaje enviado con éxito');
+          } else {
+            console.error('Error al enviar mensaje:', response.data.description);
+          }
         } catch (sendError) {
-          console.error('Error al enviar mensaje:', sendError);
+          console.error('Error al enviar mensaje:', sendError.message);
+          if (sendError.response) {
+            console.error('Detalles del error:', JSON.stringify(sendError.response.data));
+          }
           throw sendError;
         }
       } else {
         console.log('Mensaje ignorado: no es de un usuario o no contiene texto');
       }
     } catch (error) {
-      console.error('Error procesando actualización de Telegram:', error);
+      console.error('Error procesando actualización de Telegram:', error.message);
       try {
-        const errorMessage = await this.bot.sendMessage(update.message.chat.id, "Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo más tarde.");
-        console.log('Mensaje de error enviado:', JSON.stringify(errorMessage));
+        await axios.post(`${this.apiUrl}/sendMessage`, {
+          chat_id: update.message.chat.id,
+          text: "Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo más tarde."
+        });
+        console.log('Mensaje de error enviado');
       } catch (sendError) {
-        console.error('Error al enviar mensaje de error:', sendError);
+        console.error('Error al enviar mensaje de error:', sendError.message);
       }
     }
     console.log('TelegramService.handleUpdate: Finalizando procesamiento de actualización');
