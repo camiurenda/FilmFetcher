@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "api/index.js",
   "scripts": {
-    "start": "node -r puppeteer.config.cjs app.js",
+    "start": "node app.js",
     "dev": "nodemon app.js",
     "build": "npm install"
   },
