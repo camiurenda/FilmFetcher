@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Typography, Space } from 'antd';
+import { Layout, Typography, Space, Row, Col } from 'antd';
 import AuthWrapper from '../components/authwrapper/authwrapper';
 import DashboardStats from './Stats';
 import WhatsAppQR from '../components/whatsapp/Whatsapp-qr';
