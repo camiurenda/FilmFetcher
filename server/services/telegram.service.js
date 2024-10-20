@@ -2,7 +2,6 @@ const TelegramBot = require('node-telegram-bot-api');
 const ChatbotService = require('./chatbot.service');
 const axios = require('axios');
 
-
 class TelegramService {
   constructor() {
     this.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
@@ -14,17 +13,14 @@ class TelegramService {
     console.log('Intentando configurar webhook de Telegram en:', webhookUrl);
     
     try {
-      const response = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setWebhook`, {
-        url: webhookUrl
-      });
-      
-      if (response.data.ok) {
+      const response = await this.bot.setWebHook(webhookUrl);
+      if (response) {
         console.log('Webhook configurado exitosamente');
       } else {
         throw new Error('La respuesta de Telegram no fue exitosa');
       }
     } catch (error) {
-      console.error('Error al configurar webhook:', error.response ? error.response.data : error.message);
+      console.error('Error al configurar webhook:', error.message);
       
       if (retryCount < 5) {
         const delay = Math.pow(2, retryCount) * 1000;
@@ -38,13 +34,14 @@ class TelegramService {
 
   async handleUpdate(update) {
     try {
+      console.log('Recibida actualización de Telegram:', JSON.stringify(update));
       const message = update.message;
       if (message) {
         const chatId = message.chat.id;
 
         if (message.text === '/start') {
           await this.bot.sendMessage(chatId, '¡Bienvenido a FilmFetcher Bot! Estoy aquí para ayudarte con información sobre películas y cines. ¿Qué te gustaría saber?');
-        } else if (!message.text.startsWith('/')) {
+        } else {
           try {
             const respuesta = await ChatbotService.procesarMensaje(message.text);
             await this.bot.sendMessage(chatId, respuesta);
@@ -58,6 +55,7 @@ class TelegramService {
       console.error('Error procesando actualización de Telegram:', error);
     }
   }
+
   async checkStatus() {
     try {
       const me = await this.bot.getMe();
@@ -74,6 +72,7 @@ class TelegramService {
       };
     }
   }
+
   async getBotInfo() {
     try {
       const me = await this.bot.getMe();

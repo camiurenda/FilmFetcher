@@ -1,6 +1,8 @@
 const TelegramService = require('../services/telegram.service');
 
 module.exports = async (req, res) => {
+  console.log('Webhook de Telegram recibido:', req.method, JSON.stringify(req.body));
+  
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método no permitido' });
   }
