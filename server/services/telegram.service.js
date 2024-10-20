@@ -1,10 +1,9 @@
-const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
 class TelegramService {
   constructor() {
-    this.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
-    this.apiUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
+    this.token = process.env.TELEGRAM_BOT_TOKEN;
+    this.apiUrl = `https://api.telegram.org/bot${this.token}`;
   }
 
   async handleUpdate(update) {
@@ -12,54 +11,52 @@ class TelegramService {
     try {
       console.log('Procesando actualización de Telegram:', JSON.stringify(update));
       const message = update.message;
-      if (message && message.text && message.from && !message.from.is_bot) {
+      if (message && message.text) {
         const chatId = message.chat.id;
         console.log(`Mensaje recibido de chatId: ${chatId}, texto: "${message.text}"`);
 
-        let respuesta;
-        if (message.text === '/start') {
-          respuesta = '¡Bienvenido a FilmFetcher Bot! Estoy aquí para ayudarte con información sobre películas y cines. ¿Qué te gustaría saber?';
-        } else {
-          console.log('Solicitando respuesta a ChatbotService');
-          respuesta = await ChatbotService.procesarMensaje(message.text);
-        }
+        let respuesta = message.text === '/start'
+          ? '¡Bienvenido a FilmFetcher Bot! Estoy aquí para ayudarte con información sobre películas y cines. ¿Qué te gustaría saber?'
+          : `Recibí tu mensaje: "${message.text}". Pronto implementaremos más funcionalidades.`;
 
         console.log(`Respuesta generada: "${respuesta}"`);
         console.log(`Intentando enviar respuesta a ${chatId}`);
         
         try {
           console.log('Iniciando solicitud a la API de Telegram');
+          console.log(`URL de la API: ${this.apiUrl}/sendMessage`);
+          console.log('Datos de la solicitud:', JSON.stringify({
+            chat_id: chatId,
+            text: respuesta
+          }));
+
           const response = await axios.post(`${this.apiUrl}/sendMessage`, {
             chat_id: chatId,
             text: respuesta
           });
+
           console.log('Respuesta de la API de Telegram:', JSON.stringify(response.data));
-          if (response.data.ok) {
-            console.log('Mensaje enviado con éxito');
+          
+          if (response.data && response.data.ok) {
+            console.log('Mensaje enviado exitosamente');
           } else {
-            console.error('Error al enviar mensaje:', response.data.description);
+            console.error('La API de Telegram respondió con un error:', response.data);
           }
         } catch (sendError) {
           console.error('Error al enviar mensaje:', sendError.message);
           if (sendError.response) {
-            console.error('Detalles del error:', JSON.stringify(sendError.response.data));
+            console.error('Detalles del error de la API:', JSON.stringify(sendError.response.data));
+          } else if (sendError.request) {
+            console.error('No se recibió respuesta de la API');
+          } else {
+            console.error('Error al configurar la solicitud:', sendError.message);
           }
-          throw sendError;
+          console.error('Configuración de la solicitud:', sendError.config);
         }
-      } else {
-        console.log('Mensaje ignorado: no es de un usuario o no contiene texto');
       }
     } catch (error) {
       console.error('Error procesando actualización de Telegram:', error.message);
-      try {
-        await axios.post(`${this.apiUrl}/sendMessage`, {
-          chat_id: update.message.chat.id,
-          text: "Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo más tarde."
-        });
-        console.log('Mensaje de error enviado');
-      } catch (sendError) {
-        console.error('Error al enviar mensaje de error:', sendError.message);
-      }
+      console.error('Stack trace:', error.stack);
     }
     console.log('TelegramService.handleUpdate: Finalizando procesamiento de actualización');
   }
