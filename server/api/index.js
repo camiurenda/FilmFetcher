@@ -64,7 +64,6 @@ app.use('/api/sites', siteRoutes);
 app.use('/api/projections', projectionRoutes);
 app.use('/api/stats', statsRoutes);
 
-// Sobrescribir console.log para capturar logs personalizados
 const originalConsoleLog = console.log;
 console.log = (...args) => {
   if (args.length) {

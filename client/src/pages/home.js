@@ -2,7 +2,7 @@ import React from 'react';
 import { Layout, Typography, Space } from 'antd';
 import AuthWrapper from '../components/authwrapper/authwrapper';
 import DashboardStats from './Stats';
-import WhatsAppQR from '../components/Whatsapp-QR';
+import WhatsAppQR from '../components/whatsapp/Whatsapp-qr';
 
 const { Content } = Layout;
 const { Title } = Typography;

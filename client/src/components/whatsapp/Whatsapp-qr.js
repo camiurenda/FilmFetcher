@@ -13,7 +13,6 @@ const WhatsAppQR = () => {
     ws.onopen = () => {
       console.log('Conexión WebSocket establecida');
     };
-
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'qr') {
