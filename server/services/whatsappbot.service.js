@@ -1,23 +1,15 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode');
 const puppeteer = require('puppeteer-core');
 const chrome = require('chrome-aws-lambda');
-const path = require('path');
 const fs = require('fs').promises;
-const OpenAI = require('openai');
-const Projection = require('../models/projection.model');
-
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-
-let wss;
+const path = require('path');
+const { Client, LocalAuth } = require('whatsapp-web.js');
 
 const getPuppeteerOptions = async () => {
   let options;
   if (process.env.NODE_ENV === 'production') {
     options = {
       args: chrome.args,
-      executablePath: await chrome.executablePath,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || await chrome.executablePath,
       headless: chrome.headless,
     };
   } else {
