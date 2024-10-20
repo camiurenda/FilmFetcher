@@ -7,10 +7,12 @@ const siteRoutes = require('../routes/site.routes');
 const projectionRoutes = require('../routes/projection.routes');
 const ScrapingService = require('../services/scraping.service'); 
 const statsRoutes = require('../routes/stats.routes');
-const whatsappBot = require ('../services/whatsappbot.service')
+const whatsappBot = require('../services/whatsappbot.service');
 const http = require('http');
+const WebSocket = require('ws');
 
 require('dotenv').config();
+
 
 const config = {
   authRequired: false,
@@ -23,6 +25,20 @@ const config = {
 
 const app = express();
 const server = http.createServer(app);
+
+const wss = new WebSocket.Server({ server });
+
+wss.on('connection', (ws) => {
+  console.log('Nueva conexión WebSocket establecida');
+  
+  ws.on('message', (message) => {
+    console.log('Mensaje recibido:', message);
+  });
+
+  ws.on('close', () => {
+    console.log('Conexión WebSocket cerrada');
+  });
+});
 
 morgan.token('body', (req) => JSON.stringify(req.body));
 morgan.token('custom-log', (req, res) => {
@@ -98,16 +114,27 @@ const initializeServices = async () => {
   try {
     await mongoose.connect(process.env.MONGO_DB_URI, {});
     console.log('Conectado exitosamente a MongoDB');
+    
     await ScrapingService.initializeJobs();
     console.log('Trabajos de scraping inicializados');
-    whatsappBot.initialize(server);
+    
+    await whatsappBot.initialize(server, wss);
     console.log('Servicio de WhatsApp inicializado');
   } catch (err) {
     console.error('Error durante la inicialización:', err);
+    // Aquí puedes agregar lógica adicional para manejar errores específicos
+    if (err.message.includes('setupSiteChangeObserver is not a function')) {
+      console.log('Error en ScrapingService, verificando la implementación...');
+      // Puedes agregar más lógica aquí para manejar este error específico
+    }
   }
 };
 
-initializeServices();
+initializeServices().catch(err => {
+  console.error('Error crítico durante la inicialización de servicios:', err);
+  // Puedes decidir si quieres cerrar la aplicación o manejar el error de otra manera
+});
+
 
 // Manejador de errores global
 app.use((err, req, res, next) => {

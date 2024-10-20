@@ -8,11 +8,21 @@ const WhatsAppQR = () => {
   const [status, setStatus] = useState('connecting');
 
   useEffect(() => {
-    const ws = new WebSocket(`${process.env.REACT_APP_API_URL || 'ws://localhost:5000'}`);
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = process.env.NODE_ENV === 'production' 
+      ? window.location.host 
+      : 'localhost:5000';
+    const wsUrl = `${wsProtocol}//${wsHost}`;
+
+    console.log('Conectando al WebSocket:', wsUrl);
+
+    const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       console.log('Conexión WebSocket establecida');
+      setStatus('connected');
     };
+
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'qr') {
@@ -28,6 +38,11 @@ const WhatsAppQR = () => {
       setStatus('error');
     };
 
+    ws.onclose = () => {
+      console.log('Conexión WebSocket cerrada');
+      setStatus('disconnected');
+    };
+
     return () => {
       ws.close();
     };
@@ -37,7 +52,7 @@ const WhatsAppQR = () => {
     <Card 
       title={<Title level={4} style={{ color: '#fff' }}>Estado del Bot de WhatsApp</Title>}
       style={{ width: '100%', background: '#1f1f1f', border: '1px solid #303030' }}
-      bodyStyle={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+      styles={{ body: { display: 'flex', flexDirection: 'column', alignItems: 'center' } }}
     >
       {status === 'connecting' && (
         <Spin tip="Conectando...">
@@ -57,6 +72,9 @@ const WhatsAppQR = () => {
       )}
       {status === 'error' && (
         <Title level={4} style={{ color: 'red' }}>Error al conectar el bot de WhatsApp</Title>
+      )}
+      {status === 'disconnected' && (
+        <Title level={4} style={{ color: 'orange' }}>Conexión perdida. Intenta recargar la página.</Title>
       )}
     </Card>
   );

@@ -392,6 +392,11 @@ class ScrapingService {
         entorno: this.isVercelEnvironment ? 'Vercel' : 'Desarrollo local'
       };
     });
+    
+  }
+  setupSiteChangeObserver() {
+    console.log('Observador de cambios de sitios configurado.');
+    // Implementar la lógica del observador si es necesaria
   }
 }
 
