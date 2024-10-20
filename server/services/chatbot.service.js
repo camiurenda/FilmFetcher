@@ -5,17 +5,35 @@ const Site = require('../models/site.model');
 class ChatbotService {
   constructor() {
     this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    console.log('ChatbotService: Inicializado con OpenAI');
   }
 
   async procesarMensaje(mensaje) {
     try {
       console.log('ChatbotService: Procesando mensaje:', mensaje);
+      
       const peliculasActuales = await this.obtenerPeliculasActuales();
       console.log('Películas actuales obtenidas:', peliculasActuales.length);
+      if (peliculasActuales.length > 0) {
+        peliculasActuales.forEach(pelicula => {
+          console.log(`Película: ${pelicula.nombrePelicula}, Cine: ${pelicula.nombreCine}, Fecha: ${pelicula.fechaHora}`);
+        });
+      } else {
+        console.log('No se encontraron películas disponibles.');
+      }
+
       const sitios = await this.obtenerSitios();
       console.log('Sitios obtenidos:', sitios.length);
+      if (sitios.length > 0) {
+        sitios.forEach(sitio => {
+          console.log(`Sitio: ${sitio.nombre}`);
+        });
+      } else {
+        console.log('No se encontraron sitios habilitados.');
+      }
+
       const systemMessage = this.crearMensajeSistema(peliculasActuales, sitios);
-      console.log('Mensaje del sistema creado');
+      console.log('Mensaje del sistema creado:', systemMessage);
 
       console.log('Solicitando respuesta a OpenAI');
       const completion = await this.openai.chat.completions.create({
@@ -27,10 +45,12 @@ class ChatbotService {
         max_tokens: 2000
       });
 
-      console.log('Respuesta de OpenAI recibida');
+      console.log('Respuesta de OpenAI recibida:', completion);
       const respuesta = completion.choices[0].message.content;
       console.log('Respuesta generada:', respuesta);
+
       return respuesta;
+
     } catch (error) {
       console.error('Error al procesar mensaje en ChatbotService:', error);
       if (error.response) {
@@ -41,29 +61,49 @@ class ChatbotService {
   }
 
   async obtenerPeliculasActuales() {
+    console.log('Obteniendo películas actuales...');
     const fechaActual = new Date();
-    return await Projection.find({
-      habilitado: true,
-      fechaHora: { $gte: fechaActual }
-    }).sort({ fechaHora: 1 }).limit(20);
+    try {
+      const peliculas = await Projection.find({
+        habilitado: true,
+        fechaHora: { $gte: fechaActual }
+      }).sort({ fechaHora: 1 }).limit(20);
+      console.log(`Películas encontradas: ${peliculas.length}`);
+      return peliculas;
+    } catch (error) {
+      console.error('Error al obtener películas actuales:', error);
+      throw error; // Vuelvo a lanzar el error para que sea manejado por el bloque try-catch de "procesarMensaje"
+    }
   }
 
   async obtenerSitios() {
-    return await Site.find({ habilitado: true });
+    console.log('Obteniendo sitios habilitados...');
+    try {
+      const sitios = await Site.find({ habilitado: true });
+      console.log(`Sitios encontrados: ${sitios.length}`);
+      return sitios;
+    } catch (error) {
+      console.error('Error al obtener sitios:', error);
+      throw error;
+    }
   }
 
   crearMensajeSistema(peliculas, sitios) {
+    console.log('Creando mensaje del sistema...');
     const peliculasInfo = peliculas.map(p =>
       `"${p.nombrePelicula}" en ${p.nombreCine} el ${p.fechaHora.toLocaleDateString()} a las ${p.fechaHora.toLocaleTimeString()}`
     ).join(', ');
 
     const sitiosInfo = sitios.map(s => s.nombre).join(', ');
 
-    return `Eres un asistente de cine amigable y cinéfilo. Tu tarea es ayudar a los usuarios a encontrar información sobre películas y cines.
+    const mensajeSistema = `Eres un asistente de cine amigable y cinéfilo. Tu tarea es ayudar a los usuarios a encontrar información sobre películas y cines.
     Actualmente, estas son las películas en cartelera: ${peliculasInfo}.
     Los cines disponibles son: ${sitiosInfo}.
     Responde de manera amable y concisa a las preguntas de los usuarios sobre estas películas, cines, horarios o cualquier otra consulta relacionada con el cine.
     Si te preguntan por una película que no está en la lista, puedes sugerir alguna de las que sí están disponibles. Redirige amablemente preguntas que se vayan de la temática de la cartelera. Por último, si quieres poner texto en negritas, se pone con un solo asterisco y no con 2.`;
+
+    console.log('Mensaje del sistema generado:', mensajeSistema);
+    return mensajeSistema;
   }
 }
 

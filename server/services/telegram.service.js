@@ -28,6 +28,7 @@ class TelegramService {
   }
 
   async handleUpdate(update) {
+    console.log('TelegramService.handleUpdate: Iniciando procesamiento de actualización');
     try {
       console.log('Procesando actualización de Telegram:', JSON.stringify(update));
       const message = update.message;
@@ -58,7 +59,9 @@ class TelegramService {
       }
     } catch (error) {
       console.error('Error procesando actualización de Telegram:', error);
+      console.error('Stack trace:', error.stack);
     }
+    console.log('TelegramService.handleUpdate: Finalizando procesamiento de actualización');
   }
 
 
