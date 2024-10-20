@@ -7,4 +7,4 @@ client/.env
 server/.env
 .repopackignore
 repopack-output.txt
-
+.cache
