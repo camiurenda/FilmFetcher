@@ -12,7 +12,7 @@ const TelegramTest = () => {
     setLoading(true);
     try {
       const response = await axios.post('/api/test-telegram');
-      setResult(response.data.result);
+      setResult(response.data);
       message.success('Prueba completada con éxito');
     } catch (error) {
       console.error('Error al ejecutar la prueba:', error);
