@@ -9,10 +9,9 @@ const WhatsAppQR = () => {
 
   useEffect(() => {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = process.env.NODE_ENV === 'production' 
-      ? window.location.host 
-      : 'localhost:5000';
-    const wsUrl = `${wsProtocol}//${wsHost}`;
+    const wsUrl = process.env.NODE_ENV === 'production'
+      ? 'wss://filmfetcher.onrender.com'
+      : `${wsProtocol}//${window.location.hostname}:5000`;
 
     console.log('Conectando al WebSocket:', wsUrl);
 
