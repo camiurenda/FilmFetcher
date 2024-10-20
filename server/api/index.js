@@ -88,6 +88,16 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'El backend de Film Fetcher está funcionando correctamente.' });
 });
 
+app.get('/api/telegram-status', async (req, res) => {
+  try {
+    const status = await TelegramService.checkStatus();
+    res.json({ status });
+  } catch (error) {
+    console.error('Error al verificar el estado del bot de Telegram:', error);
+    res.status(500).json({ error: 'Error al verificar el estado del bot de Telegram' });
+  }
+});
+
 // Inicialización de servicios
 const initializeServices = async () => {
   try {

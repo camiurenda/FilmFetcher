@@ -31,6 +31,22 @@ class TelegramService {
       console.error('Error procesando actualización de Telegram:', error);
     }
   }
+  async checkStatus() {
+    try {
+      const me = await this.bot.getMe();
+      return {
+        ok: true,
+        botName: me.username,
+        botId: me.id
+      };
+    } catch (error) {
+      console.error('Error al verificar el estado del bot:', error);
+      return {
+        ok: false,
+        error: error.message
+      };
+    }
+  }
 }
 
 module.exports = new TelegramService();
