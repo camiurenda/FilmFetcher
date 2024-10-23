@@ -4,20 +4,12 @@
     {
       "src": "server/api/index.js",
       "use": "@vercel/node"
-    },
-    {
-      "src": "server/services/whatsappBot.service.js",
-      "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
       "dest": "server/api/index.js"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "server/services/whatsappBot.service.js"
     }
   ]
 }
