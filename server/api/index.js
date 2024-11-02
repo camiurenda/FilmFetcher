@@ -39,7 +39,8 @@ const allowedOrigins = [
   'http://localhost:5000',
   'https://film-fetcher-eta.vercel.app',
   'https://film-fetcher-exc9.vercel.app',
-  'https://filmfetcher.onrender.com/'
+  'https://filmfetcher.onrender.com/',
+  'https://testpuppeteer-1d96.onrender.com'
 ];
 
 app.use(cors({

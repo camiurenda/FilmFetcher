@@ -60,9 +60,11 @@ router.get('/proyecciones-actuales', async (req, res) => {
     const projections = await Projection.find({
       habilitado: true,
       fechaHora: { $gte: fechaActual }
-    }).sort({ fechaHora: 1 });
+    })
+    .sort({ fechaHora: 1 });
     res.status(200).json(projections);
   } catch (error) {
+    console.error('Error al obtener proyecciones:', error);
     res.status(500).json({ message: error.message });
   }
 });
