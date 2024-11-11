@@ -47,26 +47,47 @@ class ImageScrapingService {
   async openAIScrapeImage(imageUrl) {
     console.log('Ejecutando análisis basado en OpenAI para la imagen');
     
-    const prompt = `Analiza la siguiente imagen de una cartelera de cine o teatro y extrae información sobre las proyecciones de cine unicamente:
+    const prompt = `Analiza la siguiente imagen de una cartelera de cine y extrae información sobre las proyecciones:
 
-    Incluye el nombre de la película o evento, la fecha y hora, el director (si está disponible), el género, la duración, la sala y el precio. 
-    Si la imagen dice "Programación válida desde una fecha hasta otra", y cada peli solo dice la hora, asume que se proyectaran todo ese período en los horarios mencionados.
-    Devuelve la información en formato JSON siguiendo este esquema:
+REGLAS DE INTERPRETACIÓN:
+1. Si la imagen indica "Programación válida desde [fecha1] al [fecha2]":
+   - Cada película se proyecta TODOS LOS DÍAS en ese período
+   - Por cada horario mostrado, debes generar una proyección para cada día del período
+   - Usa el año actual (2024) salvo que se especifique otro año
+
+2. Para cada película, debes procesar:
+   - Nombre exactamente como aparece
+   - Todos los horarios listados
+   - La sala asignada a cada horario
+   - La duración en minutos (si se especifica)
+   - El precio según la información general de precios
+   - SAM o clasificación si está disponible
+
+3. Formato de fechas:
+   - Genera una proyección por día del período para cada horario
+   - Usa el formato ISO 8601 para las fechas (YYYY-MM-DDTHH:mm:ss.sssZ)
+   - Respeta exactamente los horarios mostrados
+
+Devuelve un JSON con este esquema EXACTO:
+{
+  "proyecciones": [
     {
-      "proyecciones": [
-        {
-          "nombre": "string",
-          "fechaHora": "string (formato ISO)",
-          "director": "string",
-          "genero": "string",
-          "duracion": number,
-          "sala": "string",
-          "precio": number
-        }
-      ]
+      "nombre": "string",
+      "fechaHora": "string (ISO8601)",
+      "director": "string",
+      "genero": "string",
+      "duracion": number,
+      "sala": "string",
+      "precio": number
     }
-    Si no encuentras nada, devuelve un array vacío. Asume que la funcion es en el año actual (2024) salvo que se exprese lo contrario. Devuelve SOLO el JSON con los datos en propercase, sin ningún otro texto o formato adicional.`;
+  ]
+}
 
+IMPORTANTE:
+- Si una película tiene 3 horarios y el período es de 7 días, deberás generar 21 proyecciones
+- Usa el precio más alto si hay diferentes precios según el día
+- Si falta información, usa "No especificado" para strings y 0 para números
+- Devuelve SOLO el JSON, sin texto adicional ni marcadores de código`
     try {
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
