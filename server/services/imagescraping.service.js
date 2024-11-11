@@ -49,7 +49,9 @@ class ImageScrapingService {
     
     const prompt = `Analiza la siguiente imagen de una cartelera de cine o teatro y extrae información sobre las proyecciones de cine unicamente:
 
-    Incluye el nombre de la película o evento, la fecha y hora, el director (si está disponible), el género, la duración, la sala y el precio. Devuelve la información en formato JSON siguiendo este esquema:
+    Incluye el nombre de la película o evento, la fecha y hora, el director (si está disponible), el género, la duración, la sala y el precio. 
+    Si la imagen dice "Programación válida desde una fecha hasta otra", y cada peli solo dice la hora, asume que se proyectaran todo ese período en los horarios mencionados.
+    Devuelve la información en formato JSON siguiendo este esquema:
     {
       "proyecciones": [
         {
