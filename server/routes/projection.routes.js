@@ -86,29 +86,70 @@ router.get('/proyecciones-anteriores', async (req, res) => {
 router.post('/load-from-file', async (req, res) => {
   try {
     const { fileUrl, sitioId, fileType } = req.body;
-    let projections;
 
+    // Validaciones del servidor
+    if (!fileUrl) {
+      return res.status(400).json({ message: 'La URL del archivo es requerida' });
+    }
+
+    if (!sitioId) {
+      return res.status(400).json({ message: 'El ID del sitio es requerido' });
+    }
+
+    if (!fileType || !['image', 'pdf'].includes(fileType)) {
+      return res.status(400).json({ message: 'Tipo de archivo no válido' });
+    }
+
+    // Verificar que el sitio existe y está habilitado
     const site = await Site.findById(sitioId);
     if (!site) {
       return res.status(404).json({ message: 'Sitio no encontrado' });
     }
 
-    if (fileType === 'image') {
-      projections = await ImageScrapingService.scrapeFromImage(fileUrl, sitioId);
-    } else if (fileType === 'pdf') {
-      projections = await PDFScrapingService.scrapeFromPDF(fileUrl, sitioId);
-    } else {
-      return res.status(400).json({ message: 'Tipo de archivo no soportado' });
+    if (!site.habilitado) {
+      return res.status(400).json({ message: 'El sitio no está habilitado para cargas' });
     }
-    
-    if (projections.length === 0) {
-      return res.status(404).json({ message: 'No se encontraron proyecciones en el archivo' });
+
+    // Validar URL
+    try {
+      const url = new URL(fileUrl);
+      // Opcional: validar protocolos permitidos
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        return res.status(400).json({ message: 'Protocolo de URL no permitido' });
+      }
+    } catch (error) {
+      return res.status(400).json({ message: 'URL no válida' });
+    }
+
+    let projections;
+    try {
+      if (fileType === 'image') {
+        projections = await ImageScrapingService.scrapeFromImage(fileUrl, sitioId);
+      } else if (fileType === 'pdf') {
+        projections = await PDFScrapingService.scrapeFromPDF(fileUrl, sitioId);
+      }
+    } catch (error) {
+      console.error('Error en el servicio de scraping:', error);
+      return res.status(500).json({ 
+        message: 'Error al procesar el archivo', 
+        error: error.message 
+      });
+    }
+
+    if (!projections || projections.length === 0) {
+      return res.status(404).json({ 
+        message: 'No se encontraron proyecciones en el archivo' 
+      });
     }
 
     res.status(200).json(projections);
+
   } catch (error) {
     console.error('Error al cargar proyecciones desde archivo:', error);
-    res.status(400).json({ message: error.message });
+    res.status(500).json({ 
+      message: 'Error interno del servidor', 
+      error: error.message 
+    });
   }
 });
 

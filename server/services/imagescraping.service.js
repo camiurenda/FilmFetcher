@@ -4,11 +4,19 @@ const Projection = require('../models/projection.model');
 const ScrapingHistory = require('../models/scrapingHistory.model');
 require('dotenv').config();
 
+/**
+ * Servicio para extraer información de carteleras desde imágenes usando OpenAI
+ */
 class ImageScrapingService {
   constructor() {
     this.openaiApiKey = process.env.OPENAI_API_KEY;
+    this.MAX_RETRIES = 3;
+    this.INITIAL_RETRY_DELAY = 1000;
   }
 
+  /**
+   * Método principal para procesar una imagen y extraer proyecciones
+   */
   async scrapeFromImage(imageUrl, sitioId) {
     console.log(`Iniciando scraping desde imagen para el sitio ID: ${sitioId}`);
     try {
@@ -17,122 +25,96 @@ class ImageScrapingService {
         throw new Error('Sitio no encontrado');
       }
 
-      const projections = await this.openAIScrapeImage(imageUrl);
-
-      if (projections.length > 0) {
-        console.log(`${projections.length} proyecciones extraídas de la imagen para ${site.nombre}`);
-        
-        // Preparar proyecciones con datos adicionales
-        const projectionsWithMetadata = projections.map(p => ({
-          ...p,
-          sitio: sitioId,
-          nombreCine: site.nombre,
-          claveUnica: `${p.nombrePelicula}-${p.fechaHora.toISOString()}-${sitioId}`,
-          cargaManual: true,
-          habilitado: true,
-          fechaCreacion: new Date()
-        }));
-
-        // Guardar las proyecciones en la base de datos
-        const savedProjections = await this.insertProjections(projectionsWithMetadata, site);
-        console.log(`Se guardaron ${savedProjections.length} proyecciones en la base de datos`);
-
-        // Actualizar historial
-        await this.updateSiteAndHistory(sitioId, 'exitoso', null, savedProjections.length);
-
-        return savedProjections;
-      } else {
-        console.log(`No se encontraron proyecciones en la imagen para el sitio ${site.nombre}`);
-        await this.updateSiteAndHistory(sitioId, 'exitoso', 'No se encontraron proyecciones', 0);
-        return [];
+      // Implementar reintentos con backoff exponencial
+      let lastError;
+      for (let intento = 1; intento <= this.MAX_RETRIES; intento++) {
+        try {
+          const projections = await this.openAIScrapeImage(imageUrl);
+          
+          if (projections && projections.length > 0) {
+            console.log(`Intento ${intento}: ${projections.length} proyecciones extraídas`);
+            const preparedProjections = this.prepareProjectionsForDB(projections, sitioId, site.nombre);
+            await this.saveProjections(preparedProjections);
+            await this.updateSiteAndHistory(sitioId, 'exitoso', null, projections.length);
+            return preparedProjections;
+          }
+        } catch (error) {
+          lastError = error;
+          console.warn(`Intento ${intento} fallido:`, error.message);
+          
+          if (intento < this.MAX_RETRIES) {
+            const delay = this.INITIAL_RETRY_DELAY * Math.pow(2, intento - 1);
+            console.log(`Esperando ${delay}ms antes del siguiente intento...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        }
       }
+
+      // Si llegamos aquí, todos los intentos fallaron
+      console.error('Todos los intentos de scraping fallaron');
+      await this.updateSiteAndHistory(sitioId, 'fallido', lastError?.message, 0);
+      throw lastError;
     } catch (error) {
-      console.error(`Error al hacer scraping de la imagen para el sitio ${sitioId}:`, error);
+      console.error('Error en scrapeFromImage:', error);
       await this.updateSiteAndHistory(sitioId, 'fallido', error.message, 0);
       throw error;
     }
   }
 
-  async insertProjections(projections, site) {
-    const savedProjections = [];
-    
-    for (const projection of projections) {
-      try {
-        // Usar findOneAndUpdate con upsert para evitar duplicados
-        const savedProjection = await Projection.findOneAndUpdate(
-          { claveUnica: projection.claveUnica },
-          { ...projection },
-          { 
-            upsert: true, 
-            new: true, 
-            setDefaultsOnInsert: true,
-            runValidators: true 
-          }
-        );
-        
-        console.log(`Proyección guardada/actualizada: ${savedProjection.nombrePelicula}`);
-        savedProjections.push(savedProjection);
-      } catch (error) {
-        if (error.code === 11000) {
-          console.log(`Proyección duplicada ignorada: ${projection.nombrePelicula}`);
-        } else {
-          console.error('Error al guardar proyección:', error);
-          throw error;
-        }
-      }
-    }
-
-    return savedProjections;
-  }
-
+  /**
+   * Procesa la imagen usando OpenAI Vision
+   */
   async openAIScrapeImage(imageUrl) {
-    console.log('Ejecutando análisis basado en OpenAI para la imagen');
+    console.log('Iniciando análisis de imagen con OpenAI...');
     
-    const prompt = `Analiza la siguiente imagen de una cartelera de cine y extrae información sobre las proyecciones:
+    const prompt = `INSTRUCCIÓN IMPORTANTE: ANALIZA LA IMAGEN Y DEVUELVE SOLO UN JSON VÁLIDO.
 
-REGLAS DE INTERPRETACIÓN:
-1. Si la imagen indica "Programación válida desde [fecha1] al [fecha2]":
-   - Cada película se proyecta TODOS LOS DÍAS en ese período
-   - Por cada horario mostrado, debes generar una proyección para cada día del período
-   - Usa el año actual (2024) salvo que se especifique otro año
+Para cada película en la cartelera, extrae:
+1. Nombre exacto
+2. Fecha y hora en formato ISO (YYYY-MM-DDTHH:mm:ss.sssZ)
+3. Director si está disponible
+4. Género si está disponible
+5. Duración en minutos
+6. Sala
+7. Precio
 
-2. Para cada película, debes procesar:
-   - Nombre exactamente como aparece
-   - Todos los horarios listados
-   - La sala asignada a cada horario
-   - La duración en minutos (si se especifica)
-   - El precio según la información general de precios
-   - SAM o clasificación si está disponible
+Si un campo no está disponible:
+- Usar "No especificado" para strings
+- Usar 0 para números
 
-3. Formato de fechas:
-   - Genera una proyección por día del período para cada horario
-   - Usa el formato ISO 8601 para las fechas (YYYY-MM-DDTHH:mm:ss.sssZ)
-   - Respeta exactamente los horarios mostrados
+Si la imagen indica un rango de fechas (ej: "válido del 20/11 al 27/11"):
+- Genera una entrada por cada día del período para cada película y horario
+- Usa el año actual (2024) si no se especifica
 
-Devuelve un JSON con este esquema EXACTO:
+FORMATO JSON REQUERIDO:
 {
   "proyecciones": [
     {
       "nombre": "string",
-      "fechaHora": "string (ISO8601)",
+      "fechaHora": "2024-01-01T00:00:00.000Z",
       "director": "string",
       "genero": "string",
-      "duracion": number,
+      "duracion": 0,
       "sala": "string",
-      "precio": number
+      "precio": 0
     }
   ]
-}`;
+}
+
+IMPORTANTE:
+- RESPONDE SOLO CON EL JSON, SIN TEXTO ADICIONAL
+- CADA OBJETO DEBE TENER EXACTAMENTE LOS CAMPOS ESPECIFICADOS
+- USA VALORES POR DEFECTO SI NO HAY INFORMACIÓN`;
 
     try {
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-          model: "gpt-4-vision-preview",
+          model: "gpt-4o-mini",
           messages: [
             {
               role: "system",
-              content: "Eres un experto en extraer información sobre proyecciones de cine desde imágenes."
+              content: "Eres un sistema que SOLO devuelve JSON válido, sin texto adicional. Siempre verifica la validez del JSON antes de responder."
             },
             {
               role: "user",
@@ -142,7 +124,8 @@ Devuelve un JSON con este esquema EXACTO:
               ]
             }
           ],
-          max_tokens: 4000
+          max_tokens: 8000,
+          temperature: 0.1
         },
         {
           headers: {
@@ -152,38 +135,129 @@ Devuelve un JSON con este esquema EXACTO:
         }
       );
 
-      const content = response.data.choices[0]?.message?.content.trim() || "{}";
-      const cleanContent = content.replace(/```json\n?|\n?```/g, '').trim();
+      let content = response.data.choices[0]?.message?.content.trim() || "{}";
+      console.log('Respuesta de OpenAI:', content.substring(0, 200) + '...');
       
-      let aiResponse;
-      try {
-        aiResponse = JSON.parse(cleanContent);
-      } catch (parseError) {
-        console.error('Error al parsear la respuesta de OpenAI:', parseError);
-        throw new Error(`No se pudo parsear la respuesta de OpenAI: ${parseError.message}`);
-      }
+      content = this.preprocessOpenAIResponse(content);
+      console.log('Respuesta preprocesada:', content.substring(0, 200) + '...');
       
-      const proyecciones = aiResponse.proyecciones || [];
-      if (!Array.isArray(proyecciones)) {
-        throw new Error('Respuesta de OpenAI no contiene un array de proyecciones válido');
+      const validation = this.validateResponse(content);
+      if (!validation.isValid) {
+        throw new Error(`Respuesta inválida: ${validation.error}`);
       }
 
-      return this.processAIResponse(proyecciones);
+      return this.processAIResponse(validation.data.proyecciones);
     } catch (error) {
-      console.error('Error en OpenAI scrape de imagen:', error);
+      console.error('Error en OpenAI scrape:', error);
       throw error;
     }
   }
 
+  /**
+   * Limpia y formatea la respuesta de OpenAI
+   */
+  preprocessOpenAIResponse(content) {
+    try {
+      // Eliminar cualquier texto antes del primer '{'
+      const startIndex = content.indexOf('{');
+      if (startIndex === -1) throw new Error('No se encontró JSON válido');
+      content = content.substring(startIndex);
+      
+      // Eliminar cualquier texto después del último '}'
+      const endIndex = content.lastIndexOf('}');
+      if (endIndex === -1) throw new Error('No se encontró JSON válido');
+      content = content.substring(0, endIndex + 1);
+      
+      // Limpiar el contenido
+      content = content
+        .replace(/\s+/g, ' ')               // Normalizar espacios
+        .replace(/'/g, '"')                 // Reemplazar comillas simples
+        .replace(/[\u2018\u2019]/g, '"')   // Reemplazar comillas curvas
+        .trim();
+      
+      return content;
+    } catch (error) {
+      console.error('Error en preprocessOpenAIResponse:', error);
+      throw new Error(`Error al preprocesar la respuesta: ${error.message}`);
+    }
+  }
+
+  /**
+   * Valida la estructura y contenido de la respuesta
+   */
+  validateResponse(content) {
+    try {
+      const parsedData = JSON.parse(content);
+
+      if (!parsedData.proyecciones) {
+        return { isValid: false, error: 'Falta el campo proyecciones' };
+      }
+
+      if (!Array.isArray(parsedData.proyecciones)) {
+        return { isValid: false, error: 'proyecciones no es un array' };
+      }
+
+      const camposRequeridos = ['nombre', 'fechaHora', 'director', 'genero', 'duracion', 'sala', 'precio'];
+      
+      for (let i = 0; i < parsedData.proyecciones.length; i++) {
+        const proj = parsedData.proyecciones[i];
+        
+        // Verificar campos requeridos
+        for (const campo of camposRequeridos) {
+          if (!proj.hasOwnProperty(campo)) {
+            return { 
+              isValid: false, 
+              error: `Falta el campo ${campo} en la proyección ${i + 1}` 
+            };
+          }
+        }
+
+        // Validar tipos de datos
+        if (typeof proj.nombre !== 'string' || 
+            typeof proj.director !== 'string' || 
+            typeof proj.genero !== 'string' || 
+            typeof proj.sala !== 'string') {
+          return { 
+            isValid: false, 
+            error: `Tipos de datos incorrectos en la proyección ${i + 1}` 
+          };
+        }
+
+        // Validar fecha
+        if (!Date.parse(proj.fechaHora)) {
+          return { 
+            isValid: false, 
+            error: `Fecha inválida en la proyección ${i + 1}: ${proj.fechaHora}` 
+          };
+        }
+      }
+
+      return { isValid: true, data: parsedData };
+    } catch (error) {
+      return { 
+        isValid: false, 
+        error: `Error al parsear JSON: ${error.message}` 
+      };
+    }
+  }
+
+  /**
+   * Procesa la respuesta de OpenAI y normaliza los datos
+   */
   processAIResponse(proyecciones) {
+    console.log('Procesando respuesta de AI...');
     const currentYear = new Date().getFullYear();
     
     return proyecciones
       .map(p => {
         try {
-          const fechaHora = new Date(p.fechaHora || p.FechaHora);
+          let fechaHora = new Date(p.fechaHora || p.FechaHora);
           
-          // Ajustar año si es necesario
+          if (isNaN(fechaHora.getTime())) {
+            console.error('Fecha inválida detectada:', p.fechaHora);
+            return null;
+          }
+
           if (fechaHora.getFullYear() < currentYear) {
             fechaHora.setFullYear(currentYear);
           }
@@ -202,34 +276,81 @@ Devuelve un JSON con este esquema EXACTO:
           return null;
         }
       })
-      .filter(p => 
-        p !== null && 
-        p.nombrePelicula && 
-        p.fechaHora && 
-        !isNaN(p.fechaHora.getTime())
-      );
+      .filter(p => p !== null && p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
   }
 
+  /**
+   * Prepara las proyecciones para guardar en la base de datos
+   */
+  prepareProjectionsForDB(projections, sitioId, nombreSitio) {
+    return projections.map(p => ({
+      nombrePelicula: p.nombrePelicula,
+      fechaHora: p.fechaHora,
+      director: p.director,
+      genero: p.genero,
+      duracion: p.duracion,
+      sala: p.sala,
+      precio: p.precio,
+      sitio: sitioId,
+      nombreCine: nombreSitio,
+      claveUnica: `${p.nombrePelicula}-${p.fechaHora.toISOString()}-${sitioId}`,
+      cargaManual: true,
+      habilitado: true,
+      fechaCreacion: new Date()
+    }));
+  }
+
+  /**
+   * Guarda las proyecciones en la base de datos
+   */
+  async saveProjections(projections) {
+    const results = [];
+    for (const projection of projections) {
+      try {
+        const savedProj = await Projection.findOneAndUpdate(
+          { claveUnica: projection.claveUnica },
+          projection,
+          { 
+            upsert: true, 
+            new: true,
+            setDefaultsOnInsert: true,
+            runValidators: true 
+          }
+        );
+        results.push(savedProj);
+      } catch (error) {
+        if (error.code === 11000) {
+          console.log(`Proyección duplicada ignorada: ${projection.nombrePelicula}`);
+        } else {
+          throw error;
+        }
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Actualiza el historial de scraping
+   */
   async updateSiteAndHistory(siteId, estado, mensajeError, cantidadProyecciones) {
     try {
-      // Actualizar información del sitio
-      await Site.findByIdAndUpdate(siteId, {
-        $set: { 
-          'ultimoScrapingExitoso': estado === 'exitoso' ? new Date() : undefined
-        }
-      });
-
-      // Crear registro en el historial
-      await ScrapingHistory.create({
+      const historialEntry = await ScrapingHistory.create({
         siteId,
         estado,
         mensajeError,
         cantidadProyecciones,
         fechaScraping: new Date()
       });
+
+      await Site.findByIdAndUpdate(siteId, {
+        $set: { 
+          ultimoScrapingExitoso: estado === 'exitoso' ? new Date() : undefined
+        }
+      });
+
+      console.log('Historial actualizado:', historialEntry);
     } catch (error) {
       console.error('Error al actualizar historial:', error);
-      // No lanzamos el error para no interrumpir el flujo principal
     }
   }
 }
