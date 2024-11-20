@@ -21,17 +21,26 @@ class ImageScrapingService {
 
       if (projections.length > 0) {
         console.log(`${projections.length} proyecciones extraídas de la imagen para ${site.nombre}`);
-        await this.updateSiteAndHistory(sitioId, 'exitoso', null, projections.length);
-
-        // Añadir claveUnica y nombreCine a cada proyección
-        const projectionsWithUniqueKey = projections.map(p => ({
+        
+        // Preparar proyecciones con datos adicionales
+        const projectionsWithMetadata = projections.map(p => ({
           ...p,
           sitio: sitioId,
           nombreCine: site.nombre,
-          claveUnica: `${p.nombrePelicula}-${p.fechaHora.toISOString()}-${sitioId}`
+          claveUnica: `${p.nombrePelicula}-${p.fechaHora.toISOString()}-${sitioId}`,
+          cargaManual: true,
+          habilitado: true,
+          fechaCreacion: new Date()
         }));
 
-        return projectionsWithUniqueKey;
+        // Guardar las proyecciones en la base de datos
+        const savedProjections = await this.insertProjections(projectionsWithMetadata, site);
+        console.log(`Se guardaron ${savedProjections.length} proyecciones en la base de datos`);
+
+        // Actualizar historial
+        await this.updateSiteAndHistory(sitioId, 'exitoso', null, savedProjections.length);
+
+        return savedProjections;
       } else {
         console.log(`No se encontraron proyecciones en la imagen para el sitio ${site.nombre}`);
         await this.updateSiteAndHistory(sitioId, 'exitoso', 'No se encontraron proyecciones', 0);
@@ -42,6 +51,38 @@ class ImageScrapingService {
       await this.updateSiteAndHistory(sitioId, 'fallido', error.message, 0);
       throw error;
     }
+  }
+
+  async insertProjections(projections, site) {
+    const savedProjections = [];
+    
+    for (const projection of projections) {
+      try {
+        // Usar findOneAndUpdate con upsert para evitar duplicados
+        const savedProjection = await Projection.findOneAndUpdate(
+          { claveUnica: projection.claveUnica },
+          { ...projection },
+          { 
+            upsert: true, 
+            new: true, 
+            setDefaultsOnInsert: true,
+            runValidators: true 
+          }
+        );
+        
+        console.log(`Proyección guardada/actualizada: ${savedProjection.nombrePelicula}`);
+        savedProjections.push(savedProjection);
+      } catch (error) {
+        if (error.code === 11000) {
+          console.log(`Proyección duplicada ignorada: ${projection.nombrePelicula}`);
+        } else {
+          console.error('Error al guardar proyección:', error);
+          throw error;
+        }
+      }
+    }
+
+    return savedProjections;
   }
 
   async openAIScrapeImage(imageUrl) {
@@ -81,22 +122,17 @@ Devuelve un JSON con este esquema EXACTO:
       "precio": number
     }
   ]
-}
+}`;
 
-IMPORTANTE:
-- Si una película tiene 3 horarios y el período es de 7 días, deberás generar 21 proyecciones
-- Usa el precio más alto si hay diferentes precios según el día
-- Si falta información, usa "No especificado" para strings y 0 para números
-- Devuelve SOLO el JSON, sin texto adicional ni marcadores de código`
     try {
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-          model: "gpt-4o-mini",
+          model: "gpt-4-vision-preview",
           messages: [
             {
               role: "system",
-              content: "Eres un experto en extraer información sobre proyecciones de cine y teatro desde imágenes. Tu tarea es analizar la imagen proporcionada y extraer información sobre las proyecciones o eventos. Devuelve SOLO el JSON sin ningún otro texto o formato adicional."
+              content: "Eres un experto en extraer información sobre proyecciones de cine desde imágenes."
             },
             {
               role: "user",
@@ -106,7 +142,7 @@ IMPORTANTE:
               ]
             }
           ],
-          max_tokens: 8000
+          max_tokens: 4000
         },
         {
           headers: {
@@ -116,21 +152,20 @@ IMPORTANTE:
         }
       );
 
-      let content = response.data.choices[0]?.message?.content.trim() || "{}";
-      content = content.replace(/```json\n?|\n?```/g, '').trim();
+      const content = response.data.choices[0]?.message?.content.trim() || "{}";
+      const cleanContent = content.replace(/```json\n?|\n?```/g, '').trim();
       
       let aiResponse;
       try {
-        aiResponse = JSON.parse(content);
+        aiResponse = JSON.parse(cleanContent);
       } catch (parseError) {
         console.error('Error al parsear la respuesta de OpenAI:', parseError);
         throw new Error(`No se pudo parsear la respuesta de OpenAI: ${parseError.message}`);
       }
       
-      const proyecciones = aiResponse.proyecciones || aiResponse.Proyecciones;
+      const proyecciones = aiResponse.proyecciones || [];
       if (!Array.isArray(proyecciones)) {
-        console.error('Respuesta de OpenAI no contiene proyecciones válidas:', aiResponse);
-        throw new Error('Respuesta de OpenAI no contiene proyecciones válidas');
+        throw new Error('Respuesta de OpenAI no contiene un array de proyecciones válido');
       }
 
       return this.processAIResponse(proyecciones);
@@ -141,29 +176,61 @@ IMPORTANTE:
   }
 
   processAIResponse(proyecciones) {
-    return proyecciones.map(p => ({
-      nombrePelicula: p.nombre || p.Nombre,
-      fechaHora: new Date(p.fechaHora || p.FechaHora),
-      director: p.director || p.Director || 'No especificado',
-      genero: p.genero || p.Genero || 'No especificado',
-      duracion: parseInt(p.duracion || p.Duracion) || 0,
-      sala: p.sala || p.Sala || 'No especificada',
-      precio: parseFloat(p.precio || p.Precio) || 0
-    })).filter(p => p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
+    const currentYear = new Date().getFullYear();
+    
+    return proyecciones
+      .map(p => {
+        try {
+          const fechaHora = new Date(p.fechaHora || p.FechaHora);
+          
+          // Ajustar año si es necesario
+          if (fechaHora.getFullYear() < currentYear) {
+            fechaHora.setFullYear(currentYear);
+          }
+
+          return {
+            nombrePelicula: p.nombre || p.Nombre || 'Sin título',
+            fechaHora,
+            director: p.director || p.Director || 'No especificado',
+            genero: p.genero || p.Genero || 'No especificado',
+            duracion: parseInt(p.duracion || p.Duracion) || 0,
+            sala: p.sala || p.Sala || 'No especificada',
+            precio: parseFloat(p.precio || p.Precio) || 0
+          };
+        } catch (error) {
+          console.error('Error procesando proyección:', error);
+          return null;
+        }
+      })
+      .filter(p => 
+        p !== null && 
+        p.nombrePelicula && 
+        p.fechaHora && 
+        !isNaN(p.fechaHora.getTime())
+      );
   }
 
   async updateSiteAndHistory(siteId, estado, mensajeError, cantidadProyecciones) {
-    await Site.findByIdAndUpdate(siteId, {
-      $set: { 'configuracionScraping.ultimoScrapingExitoso': new Date() },
-      $push: { 'configuracionScraping.errores': { fecha: new Date(), mensaje: mensajeError } }
-    });
+    try {
+      // Actualizar información del sitio
+      await Site.findByIdAndUpdate(siteId, {
+        $set: { 
+          'ultimoScrapingExitoso': estado === 'exitoso' ? new Date() : undefined
+        }
+      });
 
-    await ScrapingHistory.create({
-      siteId,
-      estado,
-      mensajeError,
-      cantidadProyecciones
-    });
+      // Crear registro en el historial
+      await ScrapingHistory.create({
+        siteId,
+        estado,
+        mensajeError,
+        cantidadProyecciones,
+        fechaScraping: new Date()
+      });
+    } catch (error) {
+      console.error('Error al actualizar historial:', error);
+      // No lanzamos el error para no interrumpir el flujo principal
+    }
   }
 }
 
