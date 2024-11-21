@@ -90,7 +90,7 @@ class PDFScrapingService {
               content: prompt
             }
           ],
-          max_tokens: 4000
+          max_tokens: 8000
         },
         {
           headers: {

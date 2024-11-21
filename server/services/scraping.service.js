@@ -206,7 +206,7 @@ class ScrapingService {
     console.log(`==================== FIN DE SCRAPING PARA ${site.nombre} ====================`);
   }
 
-  // Resto de métodos existentes sin cambios...
+  // Resto de métodos existentes sin cambios....
   extractBasicInfo(htmlContent) {
     const $ = cheerio.load(htmlContent);
     let extractedText = '';
