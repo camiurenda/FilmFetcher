@@ -90,8 +90,10 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
 
+    // Actualizar activoParaScraping basado en tipoCarga
     updateData.activoParaScraping = updateData.tipoCarga === 'scraping';
 
+    // Remover frecuenciaActualizacion si es carga manual
     if (updateData.tipoCarga === 'manual') {
       delete updateData.frecuenciaActualizacion;
     }
@@ -106,10 +108,9 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Sitio no encontrado' });
     }
 
-    if (updatedSite.activoParaScraping) {
-      ScrapingService.updateJob(updatedSite);
-    } else {
-      ScrapingService.removeJob(updatedSite._id);
+    // Solo intentar actualizar el job si el servicio está disponible
+    if (updatedSite.activoParaScraping && typeof ScrapingService?.initializeJobs === 'function') {
+      await ScrapingService.initializeJobs();
     }
 
     res.status(200).json(updatedSite);
