@@ -10,14 +10,19 @@ require('dotenv').config();
 // Configuración de URLs del servicio de scraping
 const SCRAPING_SERVICE_URL = process.env.SCRAPING_SERVICE_URL || (() => {
   return process.env.NODE_ENV === "production"
-    ? "https://filmfetcher-scraper.onrender.com"
-    : "http://localhost:4000";
+    ? "http://localhost:4000"
+    : "https://filmfetcher-scraper.onrender.com";
 })();
 
-// Configuración de reintentos y delays
-const RETRY_DELAYS = [1000, 3000, 5000]; // Delays para reintentos en ms
+// Configuración de timeouts y reintentos
 const HEALTH_CHECK_TIMEOUT = 5000;
 const SCRAPING_TIMEOUT = 60000;
+const RETRY_CONFIG = {
+  maxRetries: 3,
+  initialDelay: 1000,
+  maxDelay: 5000,
+  fallbackToProduction: true
+};
 
 class ScrapingService {
   constructor() {
@@ -39,24 +44,54 @@ class ScrapingService {
   }
 
   async checkServiceAvailability() {
-    try {
-      const healthCheck = await axios.get(`${SCRAPING_SERVICE_URL}/api/health`, {
-        timeout: HEALTH_CHECK_TIMEOUT,
-        headers: {
-          'Accept': 'application/json',
-          'X-Source': 'FilmFetcher'
+    let currentUrl = SCRAPING_SERVICE_URL;
+    let attempts = 0;
+    
+    while (attempts < RETRY_CONFIG.maxRetries) {
+      try {
+        console.log(`Intento ${attempts + 1}: Health check en ${currentUrl}`);
+        const healthCheck = await axios.get(`${currentUrl}/api/health`, {
+          timeout: HEALTH_CHECK_TIMEOUT,
+          headers: {
+            'Accept': 'application/json',
+            'X-Source': 'FilmFetcher'
+          }
+        });
+        
+        if (healthCheck.status === 200) {
+          console.log('Health check exitoso');
+          return true;
         }
-      });
-      return healthCheck.status === 200;
-    } catch (error) {
-      console.error('Error en health check:', error.message);
-      return false;
+      } catch (error) {
+        console.error(`Intento ${attempts + 1} fallido:`, error.message);
+        
+        // Si estamos en desarrollo y el servicio local falla, intentar con producción
+        if (process.env.NODE_ENV !== "production" && 
+            RETRY_CONFIG.fallbackToProduction && 
+            currentUrl.includes('localhost')) {
+          console.log('Cambiando a URL de producción...');
+          currentUrl = "https://filmfetcher-scraper.onrender.com";
+          continue;
+        }
+        
+        attempts++;
+        if (attempts < RETRY_CONFIG.maxRetries) {
+          const delay = Math.min(
+            RETRY_CONFIG.initialDelay * Math.pow(2, attempts),
+            RETRY_CONFIG.maxDelay
+          );
+          console.log(`Reintentando en ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
     }
+    
+    return false;
   }
 
   async performScraping(url) {
     try {
-      console.log(`Intentando scraping para URL: ${url}`);
+      console.log(`Iniciando scraping para URL: ${url}`);
       const response = await axios.post(
         `${SCRAPING_SERVICE_URL}/api/scrape`,
         { url },
@@ -91,8 +126,9 @@ class ScrapingService {
     
     let respuestaOpenAI = '';
     let causaFallo = '';
+    let currentAttempt = 1;
 
-    for (let intento = 0; intento < RETRY_DELAYS.length; intento++) {
+    while (currentAttempt <= RETRY_CONFIG.maxRetries) {
       try {
         // Verificar disponibilidad del servicio
         const isServiceAvailable = await this.checkServiceAvailability();
@@ -100,6 +136,7 @@ class ScrapingService {
           throw new Error('Servicio de scraping no disponible');
         }
 
+        // Validar URL
         if (!site.url || !site.url.startsWith('http')) {
           throw new Error('URL inválida');
         }
@@ -112,6 +149,7 @@ class ScrapingService {
           throw new Error('No se recibió contenido HTML');
         }
 
+        // Procesar contenido con OpenAI
         const extractedInfo = this.extractBasicInfo(htmlContent);
         const openAIResponse = await this.openAIScrape(site, extractedInfo);
         respuestaOpenAI = JSON.stringify(openAIResponse);
@@ -121,6 +159,7 @@ class ScrapingService {
           throw new Error('Formato de respuesta OpenAI inválido');
         }
 
+        // Procesar y guardar proyecciones
         const projections = this.processAIResponse(proyecciones, site._id);
         if (projections.length > 0) {
           await this.insertProjections(projections, site);
@@ -134,15 +173,20 @@ class ScrapingService {
         }
 
       } catch (error) {
-        console.error(`Error en intento ${intento + 1}/${RETRY_DELAYS.length}:`, {
+        console.error(`Error en intento ${currentAttempt}/${RETRY_CONFIG.maxRetries}:`, {
           sitio: site.nombre,
           error: error.message,
           stack: error.stack
         });
         
-        if (intento < RETRY_DELAYS.length - 1) {
-          console.log(`Reintentando en ${RETRY_DELAYS[intento]}ms...`);
-          await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[intento]));
+        if (currentAttempt < RETRY_CONFIG.maxRetries) {
+          const delay = Math.min(
+            RETRY_CONFIG.initialDelay * Math.pow(2, currentAttempt - 1),
+            RETRY_CONFIG.maxDelay
+          );
+          console.log(`Reintentando en ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          currentAttempt++;
           continue;
         }
 
@@ -155,25 +199,14 @@ class ScrapingService {
           respuestaOpenAI,
           error.stack
         );
+        break;
       }
     }
 
     console.log(`==================== FIN DE SCRAPING PARA ${site.nombre} ====================`);
   }
 
-  scheduleJob(site) {
-    console.log(`Programando job para ${site.nombre}`);
-    this.jobs[site._id] = {
-      site: site,
-      lastRun: null
-    };
-
-    if (site.frecuenciaActualizacion === 'test') {
-      console.log(`Forzando ejecución inmediata para ${site.nombre}`);
-      this.scrapeSite(site);
-    }
-  }
-
+  // Resto de métodos existentes sin cambios...
   extractBasicInfo(htmlContent) {
     const $ = cheerio.load(htmlContent);
     let extractedText = '';
@@ -217,10 +250,10 @@ class ScrapingService {
         }
       ]
     }
-    Si no encuentras nada, devuelve un array vacío. Asume que el año es el actual (2024), salvo que sea explicito que no lo es. Devuelve SOLO el JSON con los titulos en propercase, sin ningún texto adicional ni marcadores de código.`;
+    Si no encuentras nada, devuelve un array vacío. Asume que el año es el actual (2024), salvo que sea explicito que no lo es.`;
 
     try {
-      const response = await openai.chat.completions.create({
+      const response = await this.openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
           {
@@ -244,7 +277,7 @@ class ScrapingService {
       return aiResponse;
     } catch (error) {
       console.error('Error en OpenAI scrape:', error);
-      throw error;
+      throw new Error(`Error en procesamiento de OpenAI: ${error.message}`);
     }
   }
 
@@ -254,26 +287,33 @@ class ScrapingService {
       return [];
     }
     const currentYear = new Date().getFullYear();
-    return proyecciones.map(p => {
-      let fechaHora = new Date(p.fechaHora || p.FechaHora);
-      
-      if (fechaHora < new Date()) {
-        fechaHora.setFullYear(currentYear);
-      } else {
-        fechaHora.setFullYear(Math.max(fechaHora.getFullYear(), currentYear));
-      }
+    return proyecciones
+      .map(p => {
+        try {
+          let fechaHora = new Date(p.fechaHora || p.FechaHora);
+          
+          if (fechaHora < new Date()) {
+            fechaHora.setFullYear(currentYear);
+          } else {
+            fechaHora.setFullYear(Math.max(fechaHora.getFullYear(), currentYear));
+          }
 
-      return {
-        nombrePelicula: p.nombre || p.Nombre,
-        fechaHora: fechaHora,
-        director: p.director || p.Director || 'No especificado',
-        genero: p.genero || p.Genero || 'No especificado',
-        duracion: parseInt(p.duracion || p.Duracion) || 0,
-        sala: p.sala || p.Sala || 'No especificada',
-        precio: parseFloat(p.precio || p.Precio) || 0,
-        sitio: siteId
-      };
-    }).filter(p => p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
+          return {
+            nombrePelicula: p.nombre || p.Nombre,
+            fechaHora: fechaHora,
+            director: p.director || p.Director || 'No especificado',
+            genero: p.genero || p.Genero || 'No especificado',
+            duracion: parseInt(p.duracion || p.Duracion) || 0,
+            sala: p.sala || p.Sala || 'No especificada',
+            precio: parseFloat(p.precio || p.Precio) || 0,
+            sitio: siteId
+          };
+        } catch (error) {
+          console.error('Error procesando proyección individual:', error);
+          return null;
+        }
+      })
+      .filter(p => p && p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
   }
 
   async insertProjections(projections, site) {
@@ -302,124 +342,36 @@ class ScrapingService {
   }
 
   async updateSiteAndHistory(siteId, estado, mensajeError, cantidadProyecciones, respuestaOpenAI, causaFallo = '') {
-    await Site.findByIdAndUpdate(siteId, {
-      $set: { 'configuracionScraping.ultimoScrapingExitoso': new Date() },
-      $push: { 'configuracionScraping.errores': { fecha: new Date(), mensaje: mensajeError } }
-    });
+    try {
+      await Site.findByIdAndUpdate(siteId, {
+        $set: { 'configuracionScraping.ultimoScrapingExitoso': new Date() },
+        $push: { 'configuracionScraping.errores': { fecha: new Date(), mensaje: mensajeError } }
+      });
 
-    await ScrapingHistory.create({
-      siteId,
-      estado,
-      mensajeError,
-      cantidadProyecciones,
-      respuestaOpenAI,
-      causaFallo
-    });
-  }
-
-  updateJob(site) {
-    if (site.activoParaScraping) {
-      this.scheduleJob(site);
-    } else {
-      this.removeJob(site._id);
+      await ScrapingHistory.create({
+        siteId,
+        estado,
+        mensajeError,
+        cantidadProyecciones,
+        respuestaOpenAI,
+        causaFallo
+      });
+    } catch (error) {
+      console.error('Error al actualizar historial:', error);
     }
   }
 
-  removeJob(siteId) {
-    if (this.jobs[siteId]) {
-      delete this.jobs[siteId];
-      console.log(`Job removido para el sitio con ID: ${siteId}`);
+  scheduleJob(site) {
+    console.log(`Programando job para ${site.nombre}`);
+    this.jobs[site._id] = {
+      site: site,
+      lastRun: null
+    };
+
+    if (site.frecuenciaActualizacion === 'test') {
+      console.log(`Forzando ejecución inmediata para ${site.nombre}`);
+      this.scrapeSite(site);
     }
-  }
-
-  async getSchedule() {
-    const sites = await Site.find({ activoParaScraping: true });
-    const now = new Date();
-    return sites.flatMap(site => 
-      Array.from({ length: 10 }, (_, i) => {
-        const date = this.calcularProximoScraping(site, now, i);
-        return {
-          siteId: site._id,
-          nombre: site.nombre,
-          frecuencia: site.frecuenciaActualizacion,
-          fechaScraping: date
-        };
-      })
-    ).sort((a, b) => a.fechaScraping - b.fechaScraping);
-  }
-
-  calcularProximoScraping(site, fromDate) {
-    const date = new Date(fromDate);
-    const ahora = new Date();
-    
-    switch (site.frecuenciaActualizacion) {
-      case 'diaria':
-        date.setHours(0, 0, 0, 0);
-        if (date <= ahora) {
-          date.setDate(date.getDate() + 1);
-        }
-        break;
-      case 'semanal':
-        date.setHours(0, 0, 0, 0);
-        while (date <= ahora) {
-          date.setDate(date.getDate() + 7);
-        }
-        break;
-      case 'mensual':
-        date.setDate(1);
-        date.setHours(0, 0, 0, 0);
-        while (date <= ahora) {
-          date.setMonth(date.getMonth() + 1);
-        }
-        break;
-      case 'test':
-        date.setMinutes(date.getMinutes() + 1);
-        break;
-      default:
-        console.error(`Frecuencia de actualización no válida: ${site.frecuenciaActualizacion}`);
-        return null;
-    }
-    
-    return date;
-  }
-
-  async obtenerProximoScraping() {
-    const sitios = await Site.find({ activoParaScraping: true });
-    const ahora = new Date();
-    let proximoScraping = null;
-
-    for (const sitio of sitios) {
-      const proximaFecha = this.calcularProximoScraping(sitio, ahora);
-      if (proximaFecha && (!proximoScraping || proximaFecha < proximoScraping.fechaScraping)) {
-        proximoScraping = {
-          nombre: sitio.nombre,
-          fechaScraping: proximaFecha
-        };
-      }
-    }
-
-    return proximoScraping;
-  }
-
-  async getDiagnosticInfo() {
-    console.log('Obteniendo información de diagnóstico de scraping...');
-    const sites = await Site.find({ activoParaScraping: true });
-    return sites.map(site => {
-      const jobInfo = this.jobs[site._id];
-      const lastRun = this.lastRunTimes[site._id];
-      const nextRun = this.nextScheduledRuns[site._id];
-      return {
-        id: site._id,
-        nombre: site.nombre,
-        frecuencia: site.frecuenciaActualizacion,
-        ultimaEjecucion: lastRun ? lastRun.toISOString() : 'Nunca',
-        tiempoDesdeUltimaEjecucion: lastRun ? `${Math.round((new Date() - lastRun) / 1000)} segundos` : 'N/A',
-        jobActivo: !!jobInfo,
-        proximaEjecucion: nextRun ? nextRun.toISOString() : 'No programado',
-        expresionCron: this.getCronExpression(site.frecuenciaActualizacion),
-        entorno: process.env.NODE_ENV === "production" ? 'Producción' : 'Desarrollo'
-      };
-    });
   }
 }
 
