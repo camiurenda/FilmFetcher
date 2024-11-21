@@ -144,7 +144,7 @@ class ScrapingService {
         // Realizar scraping
         const scrapeResponse = await this.performScraping(site.url);
         const htmlContent = scrapeResponse.data;
-        
+        console.log('Contenido HTML recibido:', htmlContent);
         if (!htmlContent) {
           throw new Error('No se recibió contenido HTML');
         }
