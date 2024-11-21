@@ -5,11 +5,19 @@ const Projection = require('../models/projection.model');
 const ScrapingHistory = require('../models/scrapingHistory.model');
 require('dotenv').config();
 
+/**
+ * Servicio para extraer y procesar información de carteleras desde archivos PDF
+ */
 class PDFScrapingService {
   constructor() {
     this.openaiApiKey = process.env.OPENAI_API_KEY;
+    this.MAX_RETRIES = 3;
+    this.INITIAL_RETRY_DELAY = 1000;
   }
 
+  /**
+   * Método principal para procesar un PDF y extraer proyecciones
+   */
   async scrapeFromPDF(pdfUrl, sitioId) {
     console.log(`Iniciando scraping desde PDF para el sitio ID: ${sitioId}`);
     try {
@@ -18,62 +26,112 @@ class PDFScrapingService {
         throw new Error('Sitio no encontrado');
       }
 
-      const pdfContent = await this.extractPDFContent(pdfUrl);
-      const projections = await this.openAIScrapePDF(pdfContent);
-
-      if (projections.length > 0) {
-        console.log(`${projections.length} proyecciones extraídas del PDF para ${site.nombre}`);
-        await this.updateSiteAndHistory(sitioId, 'exitoso', null, projections.length);
-
-        const projectionsWithUniqueKey = projections.map(p => ({
-          ...p,
-          sitio: sitioId,
-          nombreCine: site.nombre,
-          claveUnica: `${p.nombrePelicula}-${p.fechaHora.toISOString()}-${sitioId}`
-        }));
-
-        return projectionsWithUniqueKey;
-      } else {
-        console.log(`No se encontraron proyecciones en el PDF para el sitio ${site.nombre}`);
-        await this.updateSiteAndHistory(sitioId, 'exitoso', 'No se encontraron proyecciones', 0);
-        return [];
+      // Implementar reintentos con backoff exponencial
+      let lastError;
+      for (let intento = 1; intento <= this.MAX_RETRIES; intento++) {
+        try {
+          const pdfContent = await this.extractPDFContent(pdfUrl);
+          const projections = await this.openAIScrapePDF(pdfContent);
+          
+          if (projections && projections.length > 0) {
+            console.log(`Intento ${intento}: ${projections.length} proyecciones extraídas`);
+            const preparedProjections = this.prepareProjectionsForDB(projections, sitioId, site.nombre);
+            const savedProjections = await this.saveProjections(preparedProjections);
+            await this.updateSiteAndHistory(sitioId, 'exitoso', null, projections.length);
+            return savedProjections;
+          } else {
+            console.log('No se encontraron proyecciones en el contenido del PDF');
+          }
+        } catch (error) {
+          lastError = error;
+          console.warn(`Intento ${intento} fallido:`, error.message);
+          
+          if (intento < this.MAX_RETRIES) {
+            const delay = this.INITIAL_RETRY_DELAY * Math.pow(2, intento - 1);
+            console.log(`Esperando ${delay}ms antes del siguiente intento...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        }
       }
+
+      // Si llegamos aquí, todos los intentos fallaron
+      console.error('Todos los intentos de scraping fallaron');
+      await this.updateSiteAndHistory(sitioId, 'fallido', lastError?.message, 0);
+      throw lastError;
     } catch (error) {
-      console.error(`Error al hacer scraping del PDF para el sitio ${sitioId}:`, error);
+      console.error('Error en scrapeFromPDF:', error);
       await this.updateSiteAndHistory(sitioId, 'fallido', error.message, 0);
       throw error;
     }
   }
 
+  /**
+   * Extrae el contenido de texto del PDF
+   */
   async extractPDFContent(pdfUrl) {
-    const response = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
-    const pdfBuffer = Buffer.from(response.data);
-    const data = await pdf(pdfBuffer);
-    return data.text;
+    try {
+      console.log('Descargando PDF desde:', pdfUrl);
+      const response = await axios.get(pdfUrl, { 
+        responseType: 'arraybuffer',
+        timeout: 30000 
+      });
+      
+      console.log('PDF descargado, procesando contenido...');
+      const pdfBuffer = Buffer.from(response.data);
+      const data = await pdf(pdfBuffer);
+      
+      if (!data.text || data.text.trim().length === 0) {
+        throw new Error('PDF vacío o sin contenido textual');
+      }
+      
+      return data.text;
+    } catch (error) {
+      console.error('Error al extraer contenido del PDF:', error);
+      throw new Error(`Error al procesar PDF: ${error.message}`);
+    }
   }
 
+  /**
+   * Procesa el PDF usando OpenAI
+   */
   async openAIScrapePDF(pdfContent) {
-    console.log('Ejecutando análisis basado en OpenAI para el PDF');
+    console.log('Iniciando análisis de PDF con OpenAI...');
     
-    const prompt = `Analiza el siguiente contenido extraído de un PDF de una cartelera de cine o teatro y extrae información sobre las proyecciones de cine únicamente:
+    const prompt = `INSTRUCCIÓN IMPORTANTE: ANALIZA EL TEXTO Y DEVUELVE SOLO UN JSON VÁLIDO.
 
-    ${pdfContent}
+Para cada película en la cartelera, extrae:
+1. Nombre exacto
+2. Fecha y hora en formato ISO (YYYY-MM-DDTHH:mm:ss.sssZ)
+3. Director si está disponible
+4. Género si está disponible
+5. Duración en minutos
+6. Sala
+7. Precio
 
-    Incluye el nombre de la película o evento, la fecha y hora, el director (si está disponible), el género, la duración, la sala y el precio. Devuelve la información en formato JSON siguiendo este esquema:
+Si un campo no está disponible:
+- Usar "No especificado" para strings
+- Usar 0 para números
+
+Si el PDF indica un rango de fechas:
+- Genera una entrada por cada día del período para cada película
+- Usa el año actual (2024) si no se especifica
+
+FORMATO JSON REQUERIDO:
+{
+  "proyecciones": [
     {
-      "proyecciones": [
-        {
-          "nombre": "string",
-          "fechaHora": "string (formato ISO)",
-          "director": "string",
-          "genero": "string",
-          "duracion": number,
-          "sala": "string",
-          "precio": number
-        }
-      ]
+      "nombre": "string",
+      "fechaHora": "2024-01-01T00:00:00.000Z",
+      "director": "string",
+      "genero": "string",
+      "duracion": 0,
+      "sala": "string",
+      "precio": 0
     }
-    Si no encuentras nada, devuelve un array vacío. Asume que la funcion es en el año actual (2024) salvo que se exprese lo contrario. Devuelve SOLO el JSON con los datos en propercase, sin ningún otro texto o formato adicional.`;
+  ]
+}
+
+IMPORTANTE: SOLO JSON VÁLIDO, SIN TEXTO ADICIONAL`;
 
     try {
       const response = await axios.post(
@@ -83,14 +141,15 @@ class PDFScrapingService {
           messages: [
             {
               role: "system",
-              content: "Eres un experto en extraer información sobre proyecciones de cine y teatro desde PDFs. Tu tarea es analizar el contenido del PDF proporcionado y extraer información sobre las proyecciones o eventos. Devuelve SOLO el JSON sin ningún otro texto o formato adicional."
+              content: "Eres un sistema experto en extraer información estructurada de PDFs de carteleras de cine. SOLO devuelves JSON válido, sin texto adicional."
             },
             {
               role: "user",
-              content: prompt
+              content: prompt + "\n\nContenido del PDF:\n" + pdfContent
             }
           ],
-          max_tokens: 8000
+          max_tokens: 4000,
+          temperature: 0.1
         },
         {
           headers: {
@@ -101,66 +160,205 @@ class PDFScrapingService {
       );
 
       let content = response.data.choices[0]?.message?.content.trim() || "{}";
-      content = content.replace(/```json\n?|\n?```/g, '').trim();
+      console.log('Respuesta de OpenAI:', content.substring(0, 200) + '...');
       
-      let aiResponse;
-      try {
-        aiResponse = JSON.parse(content);
-      } catch (parseError) {
-        console.error('Error al parsear la respuesta de OpenAI:', parseError);
-        throw new Error(`No se pudo parsear la respuesta de OpenAI: ${parseError.message}`);
-      }
+      content = this.preprocessOpenAIResponse(content);
       
-      const proyecciones = aiResponse.proyecciones || aiResponse.Proyecciones;
-      if (!Array.isArray(proyecciones)) {
-        console.error('Respuesta de OpenAI no contiene proyecciones válidas:', aiResponse);
-        throw new Error('Respuesta de OpenAI no contiene proyecciones válidas');
+      const validation = this.validateResponse(content);
+      if (!validation.isValid) {
+        throw new Error(`Respuesta inválida: ${validation.error}`);
       }
 
-      return this.processAIResponse(proyecciones);
+      return this.processAIResponse(validation.data.proyecciones);
     } catch (error) {
-      console.error('Error en OpenAI scrape de PDF:', error);
-      throw error;
+      console.error('Error en OpenAI scrape:', error);
+      throw new Error(`Error en procesamiento de OpenAI: ${error.message}`);
     }
   }
 
-  processAIResponse(proyecciones) {
-    const currentYear = new Date().getFullYear();
-    const nextYear = currentYear + 1;
-
-    return proyecciones.map(p => {
-      let fechaHora = new Date(p.fechaHora || p.FechaHora);
-    
-      if (fechaHora < new Date()) {
-        fechaHora.setFullYear(nextYear);
-      } else {
-        fechaHora.setFullYear(Math.max(fechaHora.getFullYear(), currentYear));
-      }
-
-      return {
-        nombrePelicula: p.nombre || p.Nombre,
-        fechaHora: fechaHora,
-        director: p.director || p.Director || 'No especificado',
-        genero: p.genero || p.Genero || 'No especificado',
-        duracion: parseInt(p.duracion || p.Duracion) || 0,
-        sala: p.sala || p.Sala || 'No especificada',
-        precio: parseFloat(p.precio || p.Precio) || 0
-      };
-    }).filter(p => p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
+  /**
+   * Limpia y formatea la respuesta de OpenAI
+   */
+  preprocessOpenAIResponse(content) {
+    try {
+      // Eliminar cualquier texto antes del primer '{'
+      const startIndex = content.indexOf('{');
+      if (startIndex === -1) throw new Error('No se encontró JSON válido');
+      content = content.substring(startIndex);
+      
+      // Eliminar cualquier texto después del último '}'
+      const endIndex = content.lastIndexOf('}');
+      if (endIndex === -1) throw new Error('No se encontró JSON válido');
+      content = content.substring(0, endIndex + 1);
+      
+      // Limpiar el contenido
+      content = content
+        .replace(/\s+/g, ' ')
+        .replace(/'/g, '"')
+        .replace(/[\u2018\u2019]/g, '"')
+        .trim();
+      
+      return content;
+    } catch (error) {
+      throw new Error(`Error al preprocesar la respuesta: ${error.message}`);
+    }
   }
 
-  async updateSiteAndHistory(siteId, estado, mensajeError, cantidadProyecciones) {
-    await Site.findByIdAndUpdate(siteId, {
-      $set: { 'configuracionScraping.ultimoScrapingExitoso': new Date() },
-      $push: { 'configuracionScraping.errores': { fecha: new Date(), mensaje: mensajeError } }
-    });
+  /**
+   * Valida la estructura y contenido de la respuesta
+   */
+  validateResponse(content) {
+    try {
+      const parsedData = JSON.parse(content);
 
-    await ScrapingHistory.create({
-      siteId,
-      estado,
-      mensajeError,
-      cantidadProyecciones
-    });
+      if (!parsedData.proyecciones) {
+        return { isValid: false, error: 'Falta el campo proyecciones' };
+      }
+
+      if (!Array.isArray(parsedData.proyecciones)) {
+        return { isValid: false, error: 'proyecciones no es un array' };
+      }
+
+      const camposRequeridos = ['nombre', 'fechaHora', 'director', 'genero', 'duracion', 'sala', 'precio'];
+      
+      for (let i = 0; i < parsedData.proyecciones.length; i++) {
+        const proj = parsedData.proyecciones[i];
+        
+        for (const campo of camposRequeridos) {
+          if (!proj.hasOwnProperty(campo)) {
+            return { 
+              isValid: false, 
+              error: `Falta el campo ${campo} en la proyección ${i + 1}` 
+            };
+          }
+        }
+
+        if (!Date.parse(proj.fechaHora)) {
+          return { 
+            isValid: false, 
+            error: `Fecha inválida en la proyección ${i + 1}: ${proj.fechaHora}` 
+          };
+        }
+      }
+
+      return { isValid: true, data: parsedData };
+    } catch (error) {
+      return { 
+        isValid: false, 
+        error: `Error al parsear JSON: ${error.message}` 
+      };
+    }
+  }
+
+  /**
+   * Procesa la respuesta de OpenAI y normaliza los datos
+   */
+  processAIResponse(proyecciones) {
+    const currentYear = new Date().getFullYear();
+    
+    return proyecciones
+      .map(p => {
+        try {
+          let fechaHora = new Date(p.fechaHora || p.FechaHora);
+          
+          if (isNaN(fechaHora.getTime())) {
+            console.error('Fecha inválida detectada:', p.fechaHora);
+            return null;
+          }
+
+          if (fechaHora.getFullYear() < currentYear) {
+            fechaHora.setFullYear(currentYear);
+          }
+
+          return {
+            nombrePelicula: p.nombre || p.Nombre || 'Sin título',
+            fechaHora,
+            director: p.director || p.Director || 'No especificado',
+            genero: p.genero || p.Genero || 'No especificado',
+            duracion: parseInt(p.duracion || p.Duracion) || 0,
+            sala: p.sala || p.Sala || 'No especificada',
+            precio: parseFloat(p.precio || p.Precio) || 0
+          };
+        } catch (error) {
+          console.error('Error procesando proyección:', error);
+          return null;
+        }
+      })
+      .filter(p => p !== null && p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
+  }
+
+  /**
+   * Prepara las proyecciones para guardar en la base de datos
+   */
+  prepareProjectionsForDB(projections, sitioId, nombreSitio) {
+    return projections.map(p => ({
+      nombrePelicula: p.nombrePelicula,
+      fechaHora: p.fechaHora,
+      director: p.director,
+      genero: p.genero,
+      duracion: p.duracion,
+      sala: p.sala,
+      precio: p.precio,
+      sitio: sitioId,
+      nombreCine: nombreSitio,
+      claveUnica: `${p.nombrePelicula}-${p.fechaHora.toISOString()}-${sitioId}`,
+      cargaManual: true,
+      habilitado: true,
+      fechaCreacion: new Date()
+    }));
+  }
+
+  /**
+   * Guarda las proyecciones en la base de datos
+   */
+  async saveProjections(projections) {
+    const results = [];
+    for (const projection of projections) {
+      try {
+        const savedProj = await Projection.findOneAndUpdate(
+          { claveUnica: projection.claveUnica },
+          projection,
+          { 
+            upsert: true, 
+            new: true,
+            setDefaultsOnInsert: true,
+            runValidators: true 
+          }
+        );
+        results.push(savedProj);
+      } catch (error) {
+        if (error.code === 11000) {
+          console.log(`Proyección duplicada ignorada: ${projection.nombrePelicula}`);
+        } else {
+          throw error;
+        }
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Actualiza el historial de scraping
+   */
+  async updateSiteAndHistory(siteId, estado, mensajeError, cantidadProyecciones) {
+    try {
+      await ScrapingHistory.create({
+        siteId,
+        estado,
+        mensajeError,
+        cantidadProyecciones,
+        fechaScraping: new Date()
+      });
+
+      await Site.findByIdAndUpdate(siteId, {
+        $set: { 
+          ultimoScrapingExitoso: estado === 'exitoso' ? new Date() : undefined
+        }
+      });
+    } catch (error) {
+      console.error('Error al actualizar historial:', error);
+      throw error;
+    }
   }
 }
 
