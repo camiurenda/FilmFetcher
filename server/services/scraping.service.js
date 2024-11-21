@@ -232,25 +232,27 @@ class ScrapingService {
   }
 
   async openAIScrape(site, extractedInfo) {
-    const prompt = `Analiza el siguiente texto extraído de un sitio web de cine y extrae información sobre las proyecciones:
-
-    ${extractedInfo}
-
-    Devuelve un JSON con este formato:
+    const prompt = `Analiza este contenido HTML y extrae las proyecciones. DEVUELVE SOLO JSON con este formato:
     {
       "proyecciones": [
         {
           "nombre": "string",
-          "fechaHora": "string (ISO)",
+          "fechaHora": "2024-01-01T00:00:00.000Z",
           "director": "string",
           "genero": "string",
-          "duracion": number,
+          "duracion": 0,
           "sala": "string",
-          "precio": number
+          "precio": 0
         }
       ]
     }
-    Si no encuentras nada, devuelve un array vacío. Asume que el año es el actual (2024), salvo que sea explicito que no lo es.`;
+    
+    Reglas:
+    - Usa "No especificado" para texto faltante
+    - Usa 0 para números faltantes
+    - Usa 2024 si no hay año
+    - Crea entrada separada por cada horario
+    - SIN texto adicional, SOLO JSON válido`;
 
     try {
       const response = await this.openai.chat.completions.create({
