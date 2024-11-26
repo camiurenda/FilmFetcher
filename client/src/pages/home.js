@@ -2,7 +2,7 @@ import React from 'react';
 import { Layout, Typography, Space, Row, Col } from 'antd';
 import AuthWrapper from '../components/authwrapper/authwrapper';
 import DashboardStats from './Stats';
-import WhatsAppQR from '../components/whatsapp/Whatsapp-qr';
+
 
 const { Content } = Layout;
 const { Title } = Typography;
@@ -18,7 +18,6 @@ const Home = () => {
               <DashboardStats />
             </Col>
             <Col xs={24} lg={8}>
-              <WhatsAppQR />
             </Col>
           </Row>
         </Space>

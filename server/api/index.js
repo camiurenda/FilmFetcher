@@ -7,6 +7,8 @@ const siteRoutes = require('../routes/site.routes');
 const projectionRoutes = require('../routes/projection.routes');
 const ScrapingService = require('../services/scraping.service'); 
 const statsRoutes = require('../routes/stats.routes');
+const scrapingScheduleRoutes = require('../routes/scrapingSchedule.routes');
+const ScheduleManager = require('../services/schedule.service');
 
 require('dotenv').config();
 
@@ -59,6 +61,7 @@ app.use('/api', siteRoutes);
 app.use('/api/sites', siteRoutes);
 app.use('/api/projections', projectionRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/scraping-schedule', scrapingScheduleRoutes)
 
 const originalConsoleLog = console.log;
 console.log = (...args) => {
@@ -92,12 +95,59 @@ app.get('/api/test', (req, res) => {
 // Inicialización de servicios
 const initializeServices = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_DB_URI, {});
-    console.log('Conectado exitosamente a MongoDB');
-    await ScrapingService.initializeJobs();
-    console.log('Trabajos de scraping inicializados');
+      console.log('Iniciando servicios...');
+      
+      // 1. Conectar a MongoDB
+      await mongoose.connect(process.env.MONGO_DB_URI, {
+          useNewUrlParser: true,
+          useUnifiedTopology: true
+      });
+      console.log('Conectado exitosamente a MongoDB');
+      
+      // 2. Inicializar servicios individualmente
+      await initializeScrapingServices();
+      
+      console.log('Todos los servicios iniciados correctamente');
   } catch (err) {
-    console.error('Error durante la inicialización:', err);
+      console.error('Error durante la inicialización:', err);
+      throw err;
+  }
+};
+
+/**
+* Inicializa los servicios de scraping asegurando el orden correcto
+*/
+const initializeScrapingServices = async () => {
+  try {
+      console.log('Inicializando servicios de scraping...');
+
+      // 1. Verificar que los servicios existen
+      if (!ScrapingService || !ScheduleManager) {
+          throw new Error('Servicios no encontrados');
+      }
+
+      // 2. Limpiar estado previo si existe
+      ScheduleManager.clearAll && await ScheduleManager.clearAll();
+      ScrapingService.clearAll && await ScrapingService.clearAll();
+
+      // 3. Inyectar dependencias
+      console.log('Inyectando dependencias entre servicios...');
+      ScrapingService.setScheduleManager(ScheduleManager);
+      ScheduleManager.setScrapingService(ScrapingService);
+
+      // 4. Verificar inyección exitosa
+      if (!ScheduleManager.scrapingService) {
+          throw new Error('Fallo en la inyección del ScrapingService');
+      }
+
+      // 5. Inicializar schedules
+      console.log('Inicializando schedules...');
+      await ScheduleManager.inicializarSchedules();
+      
+      console.log('Servicios de scraping inicializados correctamente');
+  } catch (error) {
+      console.error('Error en la inicialización de servicios de scraping:', error);
+      throw error;
   }
 };
 
