@@ -1,4 +1,3 @@
-// src/pages/sites/viewSites.js
 import React, { useEffect, useState } from 'react';
 import { Table, Tag, Space, Typography, Button, Modal, message, Spin } from 'antd';
 import axios from 'axios';
@@ -7,25 +6,43 @@ import { useAuth } from '../../hooks/useAuth';
 import SiteModal from './siteModal';
 import siteService from '../../service/site.service';
 import API_URL from '../../config/api';
+import moment from 'moment';
 
 const { Title } = Typography;
 const { confirm } = Modal;
 
 const ViewSite = () => {
   const [sites, setSites] = useState([]);
+  const [schedules, setSchedules] = useState([]);
   const [editingSite, setEditingSite] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const { user, isAuthenticated, isLoading } = useAuth();
 
-  const fetchSites = async () => {
+  const fetchData = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/sites`);
-      setSites(Array.isArray(response.data) ? response.data : []);
+      const [sitesResponse, schedulesResponse] = await Promise.all([
+        axios.get(`${API_URL}/api/sites`),
+        axios.get(`${API_URL}/api/scraping-schedule`)
+      ]);
+
+      const sitesData = Array.isArray(sitesResponse.data) ? sitesResponse.data : [];
+      const schedulesData = Array.isArray(schedulesResponse.data) ? schedulesResponse.data : [];
+
+      const sitesWithSchedules = sitesData.map(site => {
+        const schedule = schedulesData.find(sch => sch.sitioId === site._id);
+        return {
+          ...site,
+          schedule
+        };
+      });
+
+      setSites(sitesWithSchedules);
+      setSchedules(schedulesData);
     } catch (error) {
-      console.error('Error al obtener sitios:', error);
-      message.error('Error al cargar los sitios');
+      console.error('Error al obtener datos:', error);
+      message.error('Error al cargar los datos');
     } finally {
       setPageLoading(false);
     }
@@ -33,9 +50,35 @@ const ViewSite = () => {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      fetchSites();
+      fetchData();
     }
   }, [isAuthenticated, user]);
+
+  const formatFrecuencia = (site) => {
+    if (site.tipoCarga !== 'scraping') return '-';
+    
+    const schedule = site.schedule;
+    if (!schedule) return 'No configurado';
+
+    const hora = schedule.hora;
+    
+    switch (schedule.tipoFrecuencia) {
+      case 'diaria':
+        return `Diariamente a las ${hora}`;
+      case 'semanal':
+        const dias = schedule.diasSemana
+          .map(dia => moment().day(dia).format('dddd'))
+          .join(', ');
+        return `${dias} a las ${hora}`;
+      case 'mensual-dia':
+        return `Día ${schedule.diaMes} de cada mes a las ${hora}`;
+      case 'mensual-posicion':
+        const diaSemana = moment().day(schedule.diaSemana).format('dddd');
+        return `${schedule.semanaMes} ${diaSemana} del mes a las ${hora}`;
+      default:
+        return schedule.tipoFrecuencia;
+    }
+  };
 
   const handleDisable = async (id) => {
     confirm({
@@ -45,7 +88,7 @@ const ViewSite = () => {
         try {
           await axios.put(`${API_URL}/api/sites/disable/${id}`);
           message.success('Sitio deshabilitado correctamente');
-          fetchSites();
+          fetchData();
         } catch (error) {
           console.error('Error al deshabilitar el sitio:', error);
           message.error('Error al deshabilitar el sitio');
@@ -73,7 +116,7 @@ const ViewSite = () => {
         message.success('Sitio agregado correctamente');
       }
       setModalVisible(false);
-      fetchSites();
+      fetchData();
     } catch (error) {
       console.error('Error en operación:', error);
       message.error(
@@ -132,16 +175,7 @@ const ViewSite = () => {
       title: 'Frecuencia',
       dataIndex: 'tipoFrecuencia',
       key: 'tipoFrecuencia',
-      render: (tipoFrecuencia, record) => {
-        if (record.tipoCarga !== 'scraping') return '-';
-        const frecuencias = {
-          'diaria': 'Todos los días',
-          'semanal': 'Cada semana',
-          'mensual-dia': 'Día del mes',
-          'mensual-posicion': 'Posición mensual'
-        };
-        return frecuencias[tipoFrecuencia] || tipoFrecuencia;
-      }
+      render: (_, record) => formatFrecuencia(record),
     },
     {
       title: 'Estado',

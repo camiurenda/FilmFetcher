@@ -2,20 +2,19 @@ const express = require('express');
 const ScrapingSchedule = require('../models/scrapingSchedule.model');
 const ScrapingQueueService = require('../services/schedule.service');
 const router = express.Router();
+
 router.get('/', async (req, res) => {
   console.log('Iniciando GET /api/scraping-schedule');
   try {
     console.log('Intentando buscar schedules en la base de datos...');
     
-    // Primero intentamos una búsqueda simple para verificar la conexión
     const count = await ScrapingSchedule.countDocuments();
     console.log(`Número de schedules encontrados: ${count}`);
 
-    // Realizar la búsqueda completa
     const schedules = await ScrapingSchedule.find()
       .populate({
         path: 'sitioId',
-        select: 'nombre url tipo'  // Seleccionar solo los campos necesarios
+        select: 'nombre url tipo'
       })
       .lean()
       .exec();
@@ -23,43 +22,19 @@ router.get('/', async (req, res) => {
     console.log('Búsqueda completada exitosamente');
     console.log(`Schedules encontrados: ${schedules ? schedules.length : 0}`);
 
-    // Si schedules es null o undefined, devolver array vacío
     const schedulesResponse = schedules || [];
-    
-    // Log de respuesta
-    console.log('Enviando respuesta al cliente');
     res.json(schedulesResponse);
   } catch (error) {
-    // Log detallado del error
-    console.error('Error detallado en GET /api/scraping-schedule:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name,
-      code: error.code
-    });
-
-    // Si es un error de MongoDB, loguear información específica
-    if (error.name === 'MongoError' || error.name === 'MongooseError') {
-      console.error('Error de MongoDB:', {
-        code: error.code,
-        codeName: error.codeName,
-        errorLabels: error.errorLabels
-      });
-    }
-
+    console.error('Error detallado en GET /api/scraping-schedule:', error);
     res.status(500).json({ 
       mensaje: 'Error al obtener schedules',
-      error: error.message,
-      tipo: error.name,
-      codigo: error.code
+      error: error.message
     });
   }
 });
 
-/**
- * Crear nuevo schedule
- */
 router.post('/', async (req, res) => {
+  console.log('Iniciando POST /api/scraping-schedule', req.body);
   try {
     const {
       sitioId,
@@ -72,19 +47,21 @@ router.post('/', async (req, res) => {
       scrapingInmediato
     } = req.body;
 
-    // Validar que no exista ya un schedule activo para el sitio
     const scheduleExistente = await ScrapingSchedule.findOne({ 
       sitioId, 
       activo: true 
     });
 
     if (scheduleExistente) {
-      return res.status(400).json({ 
-        mensaje: 'Ya existe un schedule activo para este sitio' 
-      });
+      console.log('Actualizando schedule existente', scheduleExistente._id);
+      const scheduleActualizado = await ScrapingQueueService.actualizarSchedule(
+        scheduleExistente.sitioId,
+        req.body
+      );
+      return res.json(scheduleActualizado);
     }
 
-    // Crear nueva configuración
+    console.log('Creando nuevo schedule');
     const nuevoSchedule = await ScrapingQueueService.agregarJob({
       sitioId,
       tipoFrecuencia,
@@ -98,17 +75,14 @@ router.post('/', async (req, res) => {
 
     res.status(201).json(nuevoSchedule);
   } catch (error) {
-    console.error('Error al crear schedule:', error);
-    res.status(500).json({ 
-      mensaje: 'Error al crear schedule',
+    console.error('Error al crear/actualizar schedule:', error);
+    res.status(400).json({ 
+      mensaje: 'Error al procesar schedule',
       error: error.message 
     });
   }
 });
 
-/**
- * Obtener schedule específico
- */
 router.get('/:id', async (req, res) => {
   try {
     const schedule = await ScrapingSchedule.findById(req.params.id)
@@ -130,28 +104,27 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-/**
- * Actualizar schedule
- */
 router.put('/:id', async (req, res) => {
+  console.log('Iniciando PUT /api/scraping-schedule/:id', {
+    id: req.params.id,
+    body: req.body
+  });
   try {
-    const scheduleActualizado = await ScrapingQueueService.actualizarJob(
+    const scheduleActualizado = await ScrapingQueueService.actualizarSchedule(
       req.params.id,
       req.body
     );
+    console.log('Schedule actualizado exitosamente');
     res.json(scheduleActualizado);
   } catch (error) {
     console.error('Error al actualizar schedule:', error);
-    res.status(500).json({ 
+    res.status(400).json({ 
       mensaje: 'Error al actualizar schedule',
       error: error.message 
     });
   }
 });
 
-/**
- * Pausar schedule
- */
 router.post('/:id/pausar', async (req, res) => {
   try {
     const schedulePausado = await ScrapingQueueService.pausarJob(req.params.id);
@@ -165,9 +138,6 @@ router.post('/:id/pausar', async (req, res) => {
   }
 });
 
-/**
- * Reanudar schedule
- */
 router.post('/:id/reanudar', async (req, res) => {
   try {
     const scheduleReanudado = await ScrapingQueueService.reanudarJob(req.params.id);
