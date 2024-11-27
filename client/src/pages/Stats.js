@@ -4,22 +4,6 @@ import { DatabaseOutlined, ProjectOutlined, ClockCircleOutlined, CheckCircleOutl
 import axios from 'axios';
 import API_URL from '../config/api';
 
-const gradients = [
-  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-  'linear-gradient(135deg, #ff9a9e 0%, #fad0c4 99%, #fad0c4 100%)',
-  'linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%)',
-  'linear-gradient(to right, #fa709a 0%, #fee140 100%)',
-  'linear-gradient(to right, #43e97b 0%, #38f9d7 100%)',
-  'linear-gradient(to right, #4facfe 0%, #00f2fe 100%)'
-];
-
-const cardStyle = (gradient) => ({
-  background: gradient,
-  borderRadius: '15px',
-  boxShadow: '0 10px 20px rgba(0,0,0,0.1)',
-  transition: 'all 0.3s ease',
-});
-
 const DashboardStats = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -44,7 +28,11 @@ const DashboardStats = () => {
   }, []);
 
   if (loading) {
-    return <Spin size="large" />;
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Spin size="large" />
+      </div>
+    );
   }
 
   if (error) {
@@ -55,34 +43,68 @@ const DashboardStats = () => {
     return <Alert message="No hay datos disponibles" type="warning" showIcon />;
   }
 
+  const cardStyle = {
+    background: '#1f1f1f',
+    borderRadius: '12px',
+    border: '1px solid #303030',
+    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+    height: '100%'
+  };
+
   const statCards = [
-    { title: 'Sitios Agregados', value: stats.sitiosAgregados, icon: <DatabaseOutlined /> },
-    { title: 'Funciones encontradas', value: stats.funcionesScrapeadas, icon: <ProjectOutlined /> },
-    { title: 'Próximo Scraping', value: stats.proximoScraping, icon: <ClockCircleOutlined /> },
-    { title: 'Último Scraping Exitoso', value: stats.ultimoScrapingExitoso, icon: <CheckCircleOutlined /> },
-    { title: 'Tasa de Éxito de Scraping', value: `${stats.tasaExitoScraping}%`, icon: <PercentageOutlined /> },
-    { title: 'Sitio Más Activo', value: stats.sitioMasActivo, icon: <CrownOutlined /> }
+    { 
+      title: 'Sitios Agregados',
+      value: stats.sitiosAgregados,
+      icon: <DatabaseOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+    },
+    {
+      title: 'Funciones encontradas',
+      value: stats.funcionesScrapeadas,
+      icon: <ProjectOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+    },
+    {
+      title: 'Próximo Scraping',
+      value: stats.proximoScraping,
+      icon: <ClockCircleOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+    },
+    {
+      title: 'Último Scraping Exitoso',
+      value: stats.ultimoScrapingExitoso,
+      icon: <CheckCircleOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+    },
+    {
+      title: 'Tasa de Éxito de Scraping',
+      value: `${stats.tasaExitoScraping}%`,
+      icon: <PercentageOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+    },
+    {
+      title: 'Sitio Más Activo',
+      value: stats.sitioMasActivo,
+      icon: <CrownOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+    }
   ];
 
   return (
-    <Row gutter={[16, 16]}>
-      {statCards.map((stat, index) => (
-        <Col xs={24} sm={12} lg={8} key={index}>
-          <Card
-            style={cardStyle(gradients[index % gradients.length])}
-            hoverable
-            bodyStyle={{ padding: '24px' }}
-          >
-            <Statistic 
-              title={<span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 'bold' }}>{stat.title}</span>}
-              value={stat.value}
-              valueStyle={{ color: 'white', fontSize: '24px' }}
-              prefix={React.cloneElement(stat.icon, { style: { fontSize: '24px', marginRight: '8px' } })}
-            />
-          </Card>
-        </Col>
-      ))}
-    </Row>
+    <div style={{ width: '100%' }}>
+      <Row gutter={[24, 24]} style={{ margin: 0 }}>
+        {statCards.map((stat, index) => (
+          <Col xs={24} sm={12} lg={8} key={index} style={{ padding: '12px' }}>
+            <Card style={cardStyle} hoverable bodyStyle={{ padding: '24px' }}>
+              <Statistic
+                title={
+                  <div style={{ color: '#e6e6e6', fontSize: '14px', marginBottom: '16px' }}>
+                    {stat.title}
+                  </div>
+                }
+                value={stat.value}
+                valueStyle={{ color: '#ffffff', fontSize: '24px' }}
+                prefix={stat.icon}
+              />
+            </Card>
+          </Col>
+        ))}
+      </Row>
+    </div>
   );
 };
 

@@ -13,6 +13,31 @@ class ScheduleManagerService {
     console.log('ScrapingService establecido en ScheduleManager');
   }
 
+  async getSchedule() {
+    try {
+        console.log('Obteniendo horarios de scraping');
+        if (!this.scheduleManager) {
+            console.log('ScheduleManager no inicializado, usando consulta directa a BD');
+            const schedules = await ScrapingSchedule.find({ activo: true })
+                .populate('sitioId')
+                .sort({ proximaEjecucion: 1 });
+            
+            return schedules.map(schedule => ({
+                siteId: schedule.sitioId._id,
+                nombre: schedule.sitioId.nombre,
+                frecuencia: schedule.tipoFrecuencia,
+                proximaEjecucion: schedule.proximaEjecucion,
+                ultimaEjecucion: schedule.ultimaEjecucion
+            }));
+        }
+        
+        return await this.scheduleManager.obtenerSchedulesActivos();
+    } catch (error) {
+        console.error('Error al obtener horarios de scraping:', error);
+        throw error;
+    }
+}
+
   async iniciarTimer(schedule) {
     if (!this.scrapingService) {
       console.error('ScrapingService no inicializado');
