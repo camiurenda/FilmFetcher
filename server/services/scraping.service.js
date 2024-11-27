@@ -289,35 +289,53 @@ class ScrapingService {
     }
   }
 
-  processAIResponse(proyecciones, siteId) {
+  async processAIResponse(proyecciones, siteId) {
     const currentYear = new Date().getFullYear();
-    return proyecciones
-      .map(p => {
-        try {
-          let fechaHora = new Date(p.fechaHora || p.FechaHora);
-          
-          if (fechaHora < new Date()) {
-            fechaHora.setFullYear(currentYear);
-          } else {
-            fechaHora.setFullYear(Math.max(fechaHora.getFullYear(), currentYear));
-          }
+    
+    try {
+      const site = await Site.findById(siteId);
+      if (!site) {
+        throw new Error('Sitio no encontrado');
+      }
 
-          return {
-            nombrePelicula: p.nombre || p.Nombre,
-            fechaHora: fechaHora,
-            director: p.director || p.Director || 'No especificado',
-            genero: p.genero || p.Genero || 'No especificado',
-            duracion: parseInt(p.duracion || p.Duracion) || 0,
-            sala: p.sala || p.Sala || 'No especificada',
-            precio: parseFloat(p.precio || p.Precio) || 0,
-            sitio: siteId
-          };
-        } catch (error) {
-          console.error('Error procesando proyección individual:', error);
-          return null;
-        }
-      })
-      .filter(p => p && p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
+      return proyecciones
+        .map(p => {
+          try {
+            let fechaHora = new Date(p.fechaHora || p.FechaHora);
+            
+            if (fechaHora < new Date()) {
+              fechaHora.setFullYear(currentYear);
+            } else {
+              fechaHora.setFullYear(Math.max(fechaHora.getFullYear(), currentYear));
+            }
+
+            let precio = 0;
+            if (site.esGratis) {
+              precio = 0;
+            } else {
+              precio = parseFloat(p.precio || p.Precio) || site.precioDefault || null;
+            }
+
+            return {
+              nombrePelicula: p.nombre || p.Nombre,
+              fechaHora: fechaHora,
+              director: p.director || p.Director || 'No especificado',
+              genero: p.genero || p.Genero || 'No especificado',
+              duracion: parseInt(p.duracion || p.Duracion) || 0,
+              sala: p.sala || p.Sala || 'No especificada',
+              precio: precio,
+              sitio: siteId
+            };
+          } catch (error) {
+            console.error('Error procesando proyección individual:', error);
+            return null;
+          }
+        })
+        .filter(p => p && p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
+    } catch (error) {
+      console.error('Error al procesar respuesta del sitio:', error);
+      return [];
+    }
   }
 
   async insertProjections(projections, site) {

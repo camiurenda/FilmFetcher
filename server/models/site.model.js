@@ -31,6 +31,15 @@ const SiteSchema = new mongoose.Schema({
     enum: ['diaria', 'semanal', 'mensual', 'test'],
     required: function() { return this.tipoCarga === 'scraping'; },
   },
+  precioDefault: {
+    type: Number,
+    min: 0,
+    default: null,
+  },
+  esGratis: {
+    type: Boolean,
+    default: false,
+  },
   usuarioCreador: {
     type: String,
     required: true,

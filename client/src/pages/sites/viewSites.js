@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Space, Typography, Button, Modal, message, Form, Input, Select } from 'antd';
+import { Table, Tag, Space, Typography, Button, Modal, message } from 'antd';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import API_URL from '../../config/api';
+import SiteModal from './siteModal';
 
 const { Title } = Typography;
 const { confirm } = Modal;
@@ -12,12 +13,10 @@ const { confirm } = Modal;
 const ViewSite = () => {
   const [sites, setSites] = useState([]);
   const [editingSite, setEditingSite] = useState(null);
-  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-  const [isAddModalVisible, setIsAddModalVisible] = useState(false);
-  const [form] = Form.useForm();
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [modalMode, setModalMode] = useState('add');
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [editingTipoCarga, setEditingTipoCarga] = useState('scraping');
 
   const fetchSites = async () => {
     try {
@@ -34,7 +33,6 @@ const ViewSite = () => {
     fetchSites();
   }, []);
 
-
   const handleDisable = async (id) => {
     confirm({
       title: '¿Estás seguro de que quieres deshabilitar este sitio?',
@@ -43,7 +41,7 @@ const ViewSite = () => {
         try {
           await axios.put(`${API_URL}/api/sites/disable/${id}`);
           message.success('Sitio deshabilitado correctamente');
-          fetchSites(); // Actualizar la lista después de deshabilitar
+          fetchSites();
         } catch (error) {
           console.error('Error al deshabilitar el sitio:', error);
           message.error('Error al deshabilitar el sitio');
@@ -52,57 +50,39 @@ const ViewSite = () => {
     });
   };
 
-  const showEditModal = (record) => {
+  const showModal = (mode, record = null) => {
+    setModalMode(mode);
     setEditingSite(record);
-    setEditingTipoCarga(record.tipoCarga || 'scraping');
-    form.setFieldsValue({
-      ...record,
-      tipoCarga: record.tipoCarga || 'scraping',
-    });
-    setIsEditModalVisible(true);
+    setIsModalVisible(true);
   };
 
-  const showAddModal = () => {
-    form.resetFields();
-    form.setFieldsValue({ usuarioCreador: user.email });
-    setIsAddModalVisible(true);
+  const handleModalClose = () => {
+    setIsModalVisible(false);
+    setEditingSite(null);
+    setModalMode('add');
   };
 
-  const handleEdit = async (values) => {
+  const handleSubmit = async (values) => {
     try {
-      const updatedValues = { ...values };
-      if (updatedValues.tipoCarga === 'manual') {
-        delete updatedValues.frecuenciaActualizacion;
+      if (modalMode === 'edit') {
+        await axios.put(`${API_URL}/api/sites/${editingSite._id}`, values);
+        message.success('Sitio actualizado correctamente');
+      } else {
+        if (!user?.email) {
+          message.error('Error: Usuario no identificado');
+          return;
+        }
+        await axios.post(`${API_URL}/api/sites/add`, {
+          ...values,
+          usuarioCreador: user.email
+        });
+        message.success('Sitio agregado correctamente');
       }
-      const response = await axios.put(`${API_URL}/api/sites/${editingSite._id}`, {
-        ...updatedValues,
-        activoParaScraping: updatedValues.tipoCarga === 'scraping'
-      });
-      message.success('Sitio actualizado correctamente');
-      setIsEditModalVisible(false);
-      fetchSites(); // Actualizar la lista después de editar
+      handleModalClose();
+      fetchSites();
     } catch (error) {
-      console.error('Error al actualizar el sitio:', error);
-      message.error('Error al actualizar el sitio');
-    }
-  };
-
-  const handleAdd = async (values) => {
-    try {
-      const response = await axios.post(`${API_URL}/api/sites/add`, values);
-      message.success('Sitio agregado correctamente');
-      setIsAddModalVisible(false);
-      fetchSites(); // Actualizar la lista después de agregar
-    } catch (error) {
-      console.error('Error al agregar el sitio:', error);
-      message.error('Error al agregar el sitio');
-    }
-  };
-
-  const onEditTipoCargaChange = (value) => {
-    setEditingTipoCarga(value);
-    if (value === 'manual') {
-      form.setFieldsValue({ frecuenciaActualizacion: undefined });
+      console.error('Error al procesar el sitio:', error);
+      message.error('Error al procesar el sitio');
     }
   };
 
@@ -127,6 +107,8 @@ const ViewSite = () => {
       dataIndex: 'tipo',
       key: 'tipo',
       render: (tipo) => {
+        if (!tipo) return <Tag color="default">No especificado</Tag>;
+        
         let color = 'geekblue';
         if (tipo === 'cine') {
           color = 'purple';
@@ -147,13 +129,24 @@ const ViewSite = () => {
       dataIndex: 'tipoCarga',
       key: 'tipoCarga',
       render: (tipoCarga) => {
-        // Manejo de undefined
         const tipo = tipoCarga || 'N/A';
         return (
           <Tag color={tipo === 'scraping' ? 'blue' : (tipo === 'manual' ? 'green' : 'default')}>
             {tipo.toUpperCase()}
           </Tag>
         );
+      },
+    },
+    {
+      title: 'Precio',
+      key: 'precio',
+      render: (_, record) => {
+        if (record.esGratis) {
+          return <Tag color="green">GRATIS</Tag>;
+        }
+        return record.precioDefault ? 
+          <span>${record.precioDefault.toFixed(2)}</span> : 
+          <Tag color="orange">No especificado</Tag>;
       },
     },
     {
@@ -182,7 +175,7 @@ const ViewSite = () => {
       key: 'action',
       render: (_, record) => (
         <Space size="small">
-          <Button size="small" onClick={() => showEditModal(record)}>Editar</Button>
+          <Button size="small" onClick={() => showModal('edit', record)}>Editar</Button>
           <Button size="small" danger onClick={() => handleDisable(record._id)}>Deshabilitar</Button>
         </Space>
       ),
@@ -197,7 +190,7 @@ const ViewSite = () => {
         <div style={{ position: 'relative' }}>
           <Button 
             type="primary" 
-            onClick={showAddModal}
+            onClick={() => showModal('add')}
             style={{
               position: 'absolute',
               top: '-50px',
@@ -220,125 +213,18 @@ const ViewSite = () => {
             }}
           />
         </div>
-        <Modal
-          title="Editar Sitio"
-          visible={isEditModalVisible}
-          onCancel={() => setIsEditModalVisible(false)}
-          footer={null}
-        >
-          <Form
-            form={form}
-            onFinish={handleEdit}
-            layout="vertical"
-          >
-            <Form.Item name="nombre" label="Nombre del sitio web" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="url" label="URL del sitio web" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="direccion" label="Dirección">
-              <Input />
-            </Form.Item>
-            <Form.Item name="tipo" label="Tipo">
-              <Select>
-                <Select.Option value="cine">Cine</Select.Option>
-                <Select.Option value="teatro">Teatro</Select.Option>
-                <Select.Option value="museo">Museo</Select.Option>
-              </Select>
-            </Form.Item>
-            <Form.Item name="tipoCarga" label="Tipo de Carga" rules={[{ required: true }]}>
-              <Select onChange={onEditTipoCargaChange}>
-                <Select.Option value="scraping">Scraping</Select.Option>
-                <Select.Option value="manual">Carga Manual</Select.Option>
-              </Select>
-            </Form.Item>
-            {editingTipoCarga === 'scraping' && (
-              <Form.Item 
-                name="frecuenciaActualizacion" 
-                label="Frecuencia de Actualización" 
-                rules={[{ required: true, message: 'Por favor seleccione la frecuencia de actualización' }]}
-              >
-                <Select>
-                  <Select.Option value="diaria">Diaria</Select.Option>
-                  <Select.Option value="semanal">Semanal</Select.Option>
-                  <Select.Option value="mensual">Mensual</Select.Option>
-                  <Select.Option value="test">Test</Select.Option>
-                </Select>
-              </Form.Item>
-            )}
-            <Form.Item>
-              <Button type="primary" htmlType="submit">
-                Actualizar Sitio
-              </Button>
-            </Form.Item>
-          </Form>
-        </Modal>
 
-        <Modal
-          title="Agregar Sitio"
-          open={isAddModalVisible}
-          onCancel={() => setIsAddModalVisible(false)}
-          footer={null}
-        >
-          <Form
-            form={form}
-            onFinish={handleAdd}
-            layout="vertical"
-          >
-            <Form.Item name="nombre" label="Nombre del sitio web" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="url" label="URL del sitio web" rules={[{ required: true }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="direccion" label="Dirección">
-              <Input />
-            </Form.Item>
-            <Form.Item name="tipo" label="Tipo">
-              <Select>
-                <Select.Option value="cine">Cine</Select.Option>
-                <Select.Option value="teatro">Teatro</Select.Option>
-                <Select.Option value="museo">Museo</Select.Option>
-              </Select>
-            </Form.Item>
-            <Form.Item name="tipoCarga" label="Tipo de Carga" rules={[{ required: true }]}>
-              <Select onChange={(value) => form.setFieldsValue({ frecuenciaActualizacion: value === 'manual' ? undefined : form.getFieldValue('frecuenciaActualizacion') })}>
-                <Select.Option value="scraping">Scraping</Select.Option>
-                <Select.Option value="manual">Carga Manual</Select.Option>
-              </Select>
-            </Form.Item>
-            <Form.Item 
-              noStyle 
-              shouldUpdate={(prevValues, currentValues) => prevValues.tipoCarga !== currentValues.tipoCarga}
-            >
-              {({ getFieldValue }) => 
-                getFieldValue('tipoCarga') === 'scraping' && (
-                  <Form.Item 
-                    name="frecuenciaActualizacion" 
-                    label="Frecuencia de Actualización" 
-                    rules={[{ required: true, message: 'Por favor seleccione la frecuencia de actualización' }]}
-                  >
-                    <Select>
-                      <Select.Option value="diaria">Diaria</Select.Option>
-                      <Select.Option value="semanal">Semanal</Select.Option>
-                      <Select.Option value="mensual">Mensual</Select.Option>
-                      <Select.Option value="test">Test</Select.Option>
-                    </Select>
-                  </Form.Item>
-                )
-              }
-            </Form.Item>
-            <Form.Item name="usuarioCreador" label="Usuario Creador" rules={[{ required: true }]}>
-              <Input disabled />
-            </Form.Item>
-            <Form.Item>
-              <Button type="primary" htmlType="submit">
-                Agregar Sitio
-              </Button>
-            </Form.Item>
-          </Form>
-        </Modal>
+        <SiteModal
+          visible={isModalVisible}
+          onCancel={handleModalClose}
+          onSubmit={handleSubmit}
+          initialValues={modalMode === 'edit' ? editingSite : { 
+            tipoCarga: 'scraping',
+            esGratis: false,
+            usuarioCreador: user?.email || ''
+          }}
+          title={modalMode === 'edit' ? 'Editar Sitio' : 'Agregar Sitio'}
+        />
       </div>
     </AuthWrapper>
   );

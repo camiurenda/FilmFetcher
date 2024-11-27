@@ -250,46 +250,57 @@ IMPORTANTE: SOLO JSON VÁLIDO, SIN TEXTO ADICIONAL`;
     }
   }
 
-  /**
-   * Procesa la respuesta de OpenAI y normaliza los datos
-   */
-  processAIResponse(proyecciones) {
+  async processAIResponse(proyecciones, sitioId) {
     const currentYear = new Date().getFullYear();
     
-    return proyecciones
-      .map(p => {
-        try {
-          let fechaHora = new Date(p.fechaHora || p.FechaHora);
-          
-          if (isNaN(fechaHora.getTime())) {
-            console.error('Fecha inválida detectada:', p.fechaHora);
+    try {
+      const site = await Site.findById(sitioId);
+      if (!site) {
+        throw new Error('Sitio no encontrado');
+      }
+
+      return proyecciones
+        .map(p => {
+          try {
+            let fechaHora = new Date(p.fechaHora || p.FechaHora);
+            
+            if (isNaN(fechaHora.getTime())) {
+              console.error('Fecha inválida detectada:', p.fechaHora);
+              return null;
+            }
+
+            if (fechaHora.getFullYear() < currentYear) {
+              fechaHora.setFullYear(currentYear);
+            }
+
+            let precio = 0;
+            if (site.esGratis) {
+              precio = 0;
+            } else {
+              precio = parseFloat(p.precio || p.Precio) || site.precioDefault || null;
+            }
+
+            return {
+              nombrePelicula: p.nombre || p.Nombre || 'Sin título',
+              fechaHora: fechaHora,
+              director: p.director || p.Director || 'No especificado',
+              genero: p.genero || p.Genero || 'No especificado',
+              duracion: parseInt(p.duracion || p.Duracion) || 0,
+              sala: p.sala || p.Sala || 'No especificada',
+              precio: precio
+            };
+          } catch (error) {
+            console.error('Error procesando proyección:', error);
             return null;
           }
-
-          if (fechaHora.getFullYear() < currentYear) {
-            fechaHora.setFullYear(currentYear);
-          }
-
-          return {
-            nombrePelicula: p.nombre || p.Nombre || 'Sin título',
-            fechaHora,
-            director: p.director || p.Director || 'No especificado',
-            genero: p.genero || p.Genero || 'No especificado',
-            duracion: parseInt(p.duracion || p.Duracion) || 0,
-            sala: p.sala || p.Sala || 'No especificada',
-            precio: parseFloat(p.precio || p.Precio) || 0
-          };
-        } catch (error) {
-          console.error('Error procesando proyección:', error);
-          return null;
-        }
-      })
-      .filter(p => p !== null && p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
+        })
+        .filter(p => p !== null && p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
+    } catch (error) {
+      console.error('Error al procesar respuesta del PDF:', error);
+      return [];
+    }
   }
-
-  /**
-   * Prepara las proyecciones para guardar en la base de datos
-   */
+  
   prepareProjectionsForDB(projections, sitioId, nombreSitio) {
     return projections.map(p => ({
       nombrePelicula: p.nombrePelicula,

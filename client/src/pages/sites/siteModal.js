@@ -1,6 +1,5 @@
-// src/pages/sites/siteModal.js
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, Select, Button, Divider, Alert, Space } from 'antd';
+import { Modal, Form, Input, Select, Button, Divider, Alert, Space, Checkbox, InputNumber, Row, Col } from 'antd';
 import { SaveOutlined, LoadingOutlined, GlobalOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import ScrapingConfig from '../../components/schedule/scheduleConfig';
 import moment from 'moment';
@@ -16,15 +15,20 @@ const SiteModal = ({
   title = 'Sitio'
 }) => {
   const [form] = Form.useForm();
-  const [tipoCarga, setTipoCarga] = useState(initialValues.tipoCarga || 'scraping');
+  const [tipoCarga, setTipoCarga] = useState(initialValues?.tipoCarga || 'scraping');
+  const [esGratis, setEsGratis] = useState(initialValues?.esGratis || false);
 
   useEffect(() => {
     if (visible) {
       form.setFieldsValue({
         ...initialValues,
-        hora: initialValues.hora ? moment(initialValues.hora, 'HH:mm') : undefined
+        hora: initialValues.hora ? moment(initialValues.hora, 'HH:mm') : undefined,
+        tipoCarga: initialValues.tipoCarga || 'scraping',
+        esGratis: initialValues.esGratis || false,
+        precioDefault: initialValues.precioDefault || undefined
       });
       setTipoCarga(initialValues.tipoCarga || 'scraping');
+      setEsGratis(initialValues.esGratis || false);
     } else {
       form.resetFields();
     }
@@ -34,7 +38,6 @@ const SiteModal = ({
     try {
       const values = await form.validateFields();
       
-      // Si es carga manual, eliminar campos de scraping
       if (values.tipoCarga === 'manual') {
         delete values.tipoFrecuencia;
         delete values.hora;
@@ -45,9 +48,12 @@ const SiteModal = ({
         delete values.scrapingInmediato;
       }
 
-      // Formatear hora si existe
       if (values.hora) {
         values.hora = values.hora.format('HH:mm');
+      }
+
+      if (values.esGratis) {
+        values.precioDefault = 0;
       }
 
       await onSubmit(values);
@@ -80,91 +86,134 @@ const SiteModal = ({
       <Form
         form={form}
         layout="vertical"
-        initialValues={initialValues}
+        initialValues={{
+          tipoCarga: 'scraping',
+          esGratis: false,
+          ...initialValues
+        }}
       >
-        <Space direction="vertical" className="w-full" size="large">
-          {/* Información básica */}
-          <div>
-            <Alert
-              message="Información básica"
-              type="info"
-              showIcon
-              className="mb-4"
-            />
-            
-            <Form.Item
-              name="nombre"
-              label="Nombre del sitio"
-              rules={[
-                { required: true, message: 'El nombre es requerido' },
-                { min: 3, message: 'El nombre debe tener al menos 3 caracteres' }
-              ]}
-            >
-              <Input prefix={<GlobalOutlined />} placeholder="Ej: Cine ABC" />
-            </Form.Item>
-
-            <Form.Item
-              name="url"
-              label="URL del sitio"
-              rules={[
-                { required: true, message: 'La URL es requerida' },
-                { type: 'url', message: 'Ingrese una URL válida' }
-              ]}
-              help="Ingrese la URL completa incluyendo https://"
-            >
-              <Input placeholder="https://ejemplo.com" />
-            </Form.Item>
-
-            <Form.Item
-              name="direccion"
-              label="Dirección física"
-              tooltip="Ubicación física del establecimiento"
-            >
-              <Input 
-                prefix={<EnvironmentOutlined />} 
-                placeholder="Ej: Av. Corrientes 1234" 
+        <Space direction="vertical" className="w-full" size="large" style={{ width: '100%' }}>
+          <Row gutter={16}>
+            <Col span={24}>
+              <Alert
+                message="Información básica"
+                type="info"
+                showIcon
+                style={{ marginBottom: '16px' }}
               />
-            </Form.Item>
-          </div>
-
-          {/* Configuración general */}
-          <div>
-            <Alert
-              message="Configuración general"
-              type="info"
-              showIcon
-              className="mb-4"
-            />
-
-            <Form.Item
-              name="tipo"
-              label="Tipo de establecimiento"
-              rules={[{ required: true, message: 'Seleccione el tipo' }]}
-            >
-              <Select placeholder="Seleccione tipo">
-                <Option value="cine">Cine</Option>
-                <Option value="teatro">Teatro</Option>
-                <Option value="museo">Museo</Option>
-              </Select>
-            </Form.Item>
-
-            <Form.Item
-              name="tipoCarga"
-              label="Tipo de carga"
-              rules={[{ required: true, message: 'Seleccione el tipo de carga' }]}
-              tooltip="Define cómo se obtendrá la información de este sitio"
-            >
-              <Select 
-                placeholder="Seleccione tipo de carga"
-                onChange={setTipoCarga}
+            </Col>
+            
+            <Col xs={24} sm={24} md={12}>
+              <Form.Item
+                name="nombre"
+                label="Nombre del sitio"
+                rules={[
+                  { required: true, message: 'El nombre es requerido' },
+                  { min: 3, message: 'El nombre debe tener al menos 3 caracteres' }
+                ]}
               >
-                <Option value="scraping">Scraping Automático</Option>
-                <Option value="manual">Carga Manual</Option>
-              </Select>
-            </Form.Item>
-          </div>
+                <Input prefix={<GlobalOutlined />} placeholder="Ej: Cine ABC" />
+              </Form.Item>
+            </Col>
 
-          {/* Configuración de scraping */}
+            <Col xs={24} sm={24} md={12}>
+              <Form.Item
+                name="url"
+                label="URL del sitio"
+                rules={[
+                  { required: true, message: 'La URL es requerida' },
+                  { type: 'url', message: 'Ingrese una URL válida' }
+                ]}
+                help="Ingrese la URL completa incluyendo https://"
+              >
+                <Input placeholder="https://ejemplo.com" />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} sm={24} md={24}>
+              <Form.Item
+                name="direccion"
+                label="Dirección física"
+                tooltip="Ubicación física del establecimiento"
+              >
+                <Input 
+                  prefix={<EnvironmentOutlined />} 
+                  placeholder="Ej: Av. Corrientes 1234" 
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={24}>
+              <Alert
+                message="Configuración general"
+                type="info"
+                showIcon
+                style={{ marginBottom: '16px' }}
+              />
+            </Col>
+
+            <Col xs={24} sm={24} md={12}>
+              <Form.Item
+                name="tipo"
+                label="Tipo de establecimiento"
+                rules={[{ required: true, message: 'Seleccione el tipo' }]}
+              >
+                <Select placeholder="Seleccione tipo">
+                  <Option value="cine">Cine</Option>
+                  <Option value="teatro">Teatro</Option>
+                  <Option value="museo">Museo</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} sm={24} md={12}>
+              <Form.Item
+                name="tipoCarga"
+                label="Tipo de carga"
+                rules={[{ required: true, message: 'Seleccione el tipo de carga' }]}
+                tooltip="Define cómo se obtendrá la información de este sitio"
+              >
+                <Select 
+                  placeholder="Seleccione tipo de carga"
+                  onChange={setTipoCarga}
+                >
+                  <Option value="scraping">Scraping Automático</Option>
+                  <Option value="manual">Carga Manual</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} sm={24} md={12}>
+              <Form.Item
+                name="esGratis"
+                valuePropName="checked"
+              >
+                <Checkbox onChange={e => setEsGratis(e.target.checked)}>
+                  Las funciones son gratuitas
+                </Checkbox>
+              </Form.Item>
+            </Col>
+
+            {!esGratis && (
+              <Col xs={24} sm={24} md={12}>
+                <Form.Item
+                  name="precioDefault"
+                  label="Precio por defecto"
+                  tooltip="Este precio se usará cuando no se pueda obtener el precio real"
+                >
+                  <InputNumber
+                    min={0}
+                    step={0.01}
+                    placeholder="Ej: 2500.00"
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+              </Col>
+            )}
+          </Row>
+
           {tipoCarga === 'scraping' && (
             <>
               <Divider>Configuración de Scraping</Divider>
@@ -175,7 +224,6 @@ const SiteModal = ({
             </>
           )}
 
-          {/* Campo oculto para usuario creador */}
           <Form.Item 
             name="usuarioCreador" 
             hidden={true}
@@ -186,13 +234,6 @@ const SiteModal = ({
       </Form>
     </Modal>
   );
-};
-
-SiteModal.defaultProps = {
-  visible: false,
-  loading: false,
-  initialValues: {},
-  title: 'Sitio'
 };
 
 export default SiteModal;
