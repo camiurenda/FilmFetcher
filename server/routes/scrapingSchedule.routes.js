@@ -4,46 +4,28 @@ const ScrapingQueueService = require('../services/schedule.service');
 const router = express.Router();
 
 router.get('/', async (req, res) => {
-  console.log('Iniciando GET /api/scraping-schedule');
   try {
-    console.log('Intentando buscar schedules en la base de datos...');
-    
-    const count = await ScrapingSchedule.countDocuments();
-    console.log(`Número de schedules encontrados: ${count}`);
-
+    console.log('Obteniendo todos los schedules');
     const schedules = await ScrapingSchedule.find()
-      .populate({
-        path: 'sitioId',
-        select: 'nombre url tipo'
-      })
-      .lean()
-      .exec();
-
-    console.log('Búsqueda completada exitosamente');
-    console.log(`Schedules encontrados: ${schedules ? schedules.length : 0}`);
-
-    const schedulesResponse = schedules || [];
-    res.json(schedulesResponse);
+      .populate('sitioId')
+      .lean();
+    console.log(`Se encontraron ${schedules.length} schedules`);
+    res.json(schedules);
   } catch (error) {
-    console.error('Error detallado en GET /api/scraping-schedule:', error);
-    res.status(500).json({ 
-      mensaje: 'Error al obtener schedules',
-      error: error.message
-    });
+    console.error('Error al obtener schedules:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
+
 router.post('/', async (req, res) => {
-  console.log('Iniciando POST /api/scraping-schedule', req.body);
   try {
     const {
       sitioId,
       tipoFrecuencia,
-      hora,
-      diasSemana,
-      diaMes,
-      semanaMes,
-      diaSemana,
+      configuraciones,
+      fechaInicio,
+      fechaFin,
       scrapingInmediato
     } = req.body;
 
@@ -55,7 +37,7 @@ router.post('/', async (req, res) => {
     if (scheduleExistente) {
       console.log('Actualizando schedule existente', scheduleExistente._id);
       const scheduleActualizado = await ScrapingQueueService.actualizarSchedule(
-        scheduleExistente.sitioId,
+        scheduleExistente._id,
         req.body
       );
       return res.json(scheduleActualizado);
@@ -65,11 +47,9 @@ router.post('/', async (req, res) => {
     const nuevoSchedule = await ScrapingQueueService.agregarJob({
       sitioId,
       tipoFrecuencia,
-      hora,
-      diasSemana,
-      diaMes,
-      semanaMes,
-      diaSemana,
+      configuraciones,
+      fechaInicio,
+      fechaFin,
       scrapingInmediato: scrapingInmediato || false
     });
 
@@ -83,43 +63,14 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/cola/estado', async (req, res) => {
   try {
-    const schedule = await ScrapingSchedule.findById(req.params.id)
-      .populate('sitioId');
-
-    if (!schedule) {
-      return res.status(404).json({ 
-        mensaje: 'Schedule no encontrado' 
-      });
-    }
-
-    res.json(schedule);
+    const estadoCola = await ScrapingQueueService.obtenerEstadoCola();
+    res.json(estadoCola);
   } catch (error) {
-    console.error('Error al obtener schedule:', error);
+    console.error('Error al obtener estado de la cola:', error);
     res.status(500).json({ 
-      mensaje: 'Error al obtener schedule',
-      error: error.message 
-    });
-  }
-});
-
-router.put('/:id', async (req, res) => {
-  console.log('Iniciando PUT /api/scraping-schedule/:id', {
-    id: req.params.id,
-    body: req.body
-  });
-  try {
-    const scheduleActualizado = await ScrapingQueueService.actualizarSchedule(
-      req.params.id,
-      req.body
-    );
-    console.log('Schedule actualizado exitosamente');
-    res.json(scheduleActualizado);
-  } catch (error) {
-    console.error('Error al actualizar schedule:', error);
-    res.status(400).json({ 
-      mensaje: 'Error al actualizar schedule',
+      mensaje: 'Error al obtener estado de la cola',
       error: error.message 
     });
   }
@@ -151,16 +102,17 @@ router.post('/:id/reanudar', async (req, res) => {
   }
 });
 
-router.get('/cola/estado', async (req, res) => {
-  console.log('Iniciando GET /api/scraping-schedule/cola/estado');
+router.put('/:id', async (req, res) => {
   try {
-    const estadoCola = await ScrapingQueueService.obtenerEstadoCola();
-    console.log('Estado de cola obtenido:', estadoCola);
-    res.json(estadoCola);
+    const scheduleActualizado = await ScrapingQueueService.actualizarSchedule(
+      req.params.id,
+      req.body
+    );
+    res.json(scheduleActualizado);
   } catch (error) {
-    console.error('Error al obtener estado de la cola:', error);
-    res.status(500).json({ 
-      mensaje: 'Error al obtener estado de la cola',
+    console.error('Error al actualizar schedule:', error);
+    res.status(400).json({ 
+      mensaje: 'Error al actualizar schedule',
       error: error.message 
     });
   }
@@ -176,6 +128,25 @@ router.post('/sync', async (req, res) => {
       mensaje: 'Error al sincronizar schedules',
       error: error.message 
     });
+  }
+});
+
+router.get('/sitio/:sitioId', async (req, res) => {
+  try {
+    console.log('Buscando schedule para sitio:', req.params.sitioId);
+    const schedule = await ScrapingSchedule.findOne({ sitioId: req.params.sitioId })
+      .populate('sitioId');
+    
+    if (!schedule) {
+      console.log('No se encontró schedule para el sitio');
+      return res.status(404).json({ message: 'Schedule no encontrado' });
+    }
+
+    console.log('Schedule encontrado:', schedule);
+    res.json(schedule);
+  } catch (error) {
+    console.error('Error al obtener schedule por sitio:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

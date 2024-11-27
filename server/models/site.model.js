@@ -55,7 +55,48 @@ const SiteSchema = new mongoose.Schema({
   activoParaScraping: {
     type: Boolean,
     default: function() { return this.tipoCarga === 'scraping'; },
+  },
+  configuracionScraping: {
+    tipoFrecuencia: {
+      type: String,
+      enum: ['diaria', 'semanal', 'mensual-dia', 'mensual-posicion', 'test'],
+    },
+    hora: String,
+    diasSemana: [Number],
+    diaMes: Number,
+    semanaMes: String,
+    diaSemana: Number,
+    ultimoScrapingExitoso: Date,
+    errores: [{
+      fecha: Date,
+      mensaje: String
+    }]
   }
+});
+
+SiteSchema.pre('save', function(next) {
+  console.log('Pre-save hook ejecutándose para sitio:', this._id);
+  console.log('Datos del sitio:', this.toObject());
+  
+  if (this.tipoCarga === 'scraping' && !this.frecuenciaActualizacion) {
+    next(new Error('La frecuencia de actualización es requerida para sitios de scraping'));
+    return;
+  }
+  
+  next();
+});
+
+SiteSchema.pre('findOneAndUpdate', function(next) {
+  console.log('Pre-update hook ejecutándose');
+  console.log('Update data:', this.getUpdate());
+  
+  const update = this.getUpdate();
+  if (update.tipoCarga === 'scraping' && !update.frecuenciaActualizacion) {
+    next(new Error('La frecuencia de actualización es requerida para sitios de scraping'));
+    return;
+  }
+  
+  next();
 });
 
 module.exports = mongoose.model('Sites', SiteSchema);

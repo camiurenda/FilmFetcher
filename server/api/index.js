@@ -6,6 +6,7 @@ const { auth, requiresAuth } = require('express-openid-connect');
 const siteRoutes = require('../routes/site.routes');
 const projectionRoutes = require('../routes/projection.routes');
 const ScrapingService = require('../services/scraping.service'); 
+const scrapingScheduleRoutes = require('../routes/scrapingSchedule.routes');
 const statsRoutes = require('../routes/stats.routes');
 
 require('dotenv').config();
@@ -55,10 +56,17 @@ app.use(cors({
   credentials: true
 }));
 
-app.use('/api', siteRoutes);
-app.use('/api/sites', siteRoutes);
+// Rutas principales
 app.use('/api/projections', projectionRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/scraping-schedule', scrapingScheduleRoutes);
+
+// IMPORTANTE: Registrar la ruta de sites después de las otras rutas específicas
+// y solo una vez
+app.use('/api/sites', siteRoutes);
+
+// Eliminar esta línea para evitar el doble registro
+// app.use('/api', siteRoutes);
 
 const originalConsoleLog = console.log;
 console.log = (...args) => {

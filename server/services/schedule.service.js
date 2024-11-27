@@ -1,263 +1,237 @@
 const ScrapingSchedule = require('../models/scrapingSchedule.model');
+const ScrapingService = require('./scraping.service');
 const Site = require('../models/site.model');
 
 class ScheduleManagerService {
   constructor() {
     this.schedules = new Map();
     this.timers = new Map();
-    this.scrapingService = null;
+    this.executingJobs = new Set();
   }
 
-  setScrapingService(service) {
-    this.scrapingService = service;
-    console.log('ScrapingService establecido en ScheduleManager');
-  }
-
-  async getSchedule() {
-    try {
-        console.log('Obteniendo horarios de scraping');
-        if (!this.scheduleManager) {
-            console.log('ScheduleManager no inicializado, usando consulta directa a BD');
-            const schedules = await ScrapingSchedule.find({ activo: true })
-                .populate('sitioId')
-                .sort({ proximaEjecucion: 1 });
-            
-            return schedules.map(schedule => ({
-                siteId: schedule.sitioId._id,
-                nombre: schedule.sitioId.nombre,
-                frecuencia: schedule.tipoFrecuencia,
-                proximaEjecucion: schedule.proximaEjecucion,
-                ultimaEjecucion: schedule.ultimaEjecucion
-            }));
-        }
-        
-        return await this.scheduleManager.obtenerSchedulesActivos();
-    } catch (error) {
-        console.error('Error al obtener horarios de scraping:', error);
-        throw error;
-    }
-}
-
-  async iniciarTimer(schedule) {
-    if (!this.scrapingService) {
-      console.error('ScrapingService no inicializado');
-      throw new Error('ScrapingService no ha sido inyectado');
-    }
-
-    const proximaEjecucion = this.calcularProximaEjecucion(schedule);
-    const ahora = new Date();
-    const delay = proximaEjecucion.getTime() - ahora.getTime();
-
-    console.log(`Programando timer para ${schedule.sitioId} - Próxima ejecución: ${proximaEjecucion}`);
-
-    const timer = setTimeout(async () => {
-      try {
-        const site = await Site.findById(schedule.sitioId);
-        if (site && this.scrapingService) {
-          console.log(`Ejecutando scraping para sitio: ${site.nombre}`);
-          await this.scrapingService.ejecutarScrapingSitio(site);
-          console.log(`Scraping completado para sitio: ${site.nombre}`);
-        } else {
-          console.error(`No se pudo encontrar el sitio ${schedule.sitioId} o el servicio no está disponible`);
-        }
-        await this.actualizarSchedule(schedule.sitioId, schedule);
-      } catch (error) {
-        console.error(`Error en ejecución programada para ${schedule.sitioId}:`, error);
-      }
-    }, delay);
-
-    this.timers.set(schedule._id.toString(), timer);
-    this.schedules.set(schedule._id.toString(), schedule);
-
-    await ScrapingSchedule.findByIdAndUpdate(schedule._id, {
-      proximaEjecucion,
-      ultimaEjecucion: schedule.proximaEjecucion
-    });
+  calcularProximaEjecucion(configuracion, fechaReferencia = new Date()) {
+    const fecha = new Date(fechaReferencia);
     
-    console.log(`Timer iniciado para schedule ${schedule._id}`);
-  }
-
-  calcularProximaEjecucion(configuracion) {
-    console.log('Calculando próxima ejecución para configuración:', configuracion);
-    const ahora = new Date();
-    const [hora, minuto] = configuracion.hora.split(':').map(Number);
-    let proximaEjecucion = new Date();
-    proximaEjecucion.setHours(hora, minuto, 0, 0);
-
     switch (configuracion.tipoFrecuencia) {
+      case 'test':
+        return new Date(fecha.getTime() + 60000); // 1 minuto
+        
       case 'diaria':
-        if (proximaEjecucion <= ahora) {
-          proximaEjecucion.setDate(proximaEjecucion.getDate() + 1);
-        }
-        break;
-
+        fecha.setHours(0, 0, 0, 0);
+        fecha.setDate(fecha.getDate() + 1);
+        return fecha;
+        
       case 'semanal':
-        const diasSemana = Array.isArray(configuracion.diasSemana) ? 
-          configuracion.diasSemana.map(d => parseInt(d)) : 
-          [parseInt(configuracion.diasSemana)];
-
-        while (!diasSemana.includes(proximaEjecucion.getDay()) || proximaEjecucion <= ahora) {
-          proximaEjecucion.setDate(proximaEjecucion.getDate() + 1);
+        fecha.setHours(0, 0, 0, 0);
+        let diasParaProximaEjecucion = 7;
+        if (configuracion.diasSemana && configuracion.diasSemana.length > 0) {
+          const diaActual = fecha.getDay();
+          const proximosDias = configuracion.diasSemana.map(dia => 
+            dia > diaActual ? dia - diaActual : 7 - (diaActual - dia)
+          );
+          diasParaProximaEjecucion = Math.min(...proximosDias);
         }
-        break;
-
-      case 'mensual-dia':
-        proximaEjecucion.setDate(parseInt(configuracion.diaMes));
-        if (proximaEjecucion <= ahora) {
-          proximaEjecucion.setMonth(proximaEjecucion.getMonth() + 1);
-        }
-        break;
-
-      case 'mensual-posicion':
-        proximaEjecucion = this.calcularFechaPosicionMensual(configuracion);
-        if (proximaEjecucion <= ahora) {
-          proximaEjecucion.setMonth(proximaEjecucion.getMonth() + 1);
-          proximaEjecucion = this.calcularFechaPosicionMensual(configuracion, proximaEjecucion);
-        }
-        break;
+        fecha.setDate(fecha.getDate() + diasParaProximaEjecucion);
+        return fecha;
+        
+      case 'mensual':
+        fecha.setDate(1);
+        fecha.setHours(0, 0, 0, 0);
+        fecha.setMonth(fecha.getMonth() + 1);
+        return fecha;
+        
+      default:
+        throw new Error(`Tipo de frecuencia no válida: ${configuracion.tipoFrecuencia}`);
     }
-
-    console.log('Próxima ejecución calculada:', proximaEjecucion);
-    return proximaEjecucion;
-  }
-
-  calcularFechaPosicionMensual(configuracion, fecha = new Date()) {
-    const nuevaFecha = new Date(fecha);
-    nuevaFecha.setDate(1);
-    const [hora, minuto] = configuracion.hora.split(':').map(Number);
-    nuevaFecha.setHours(hora, minuto, 0, 0);
-
-    const posiciones = {
-      'primera': 0,
-      'segunda': 1,
-      'tercera': 2,
-      'cuarta': 3,
-      'ultima': -1
-    };
-
-    if (configuracion.semanaMes === 'ultima') {
-      nuevaFecha.setMonth(nuevaFecha.getMonth() + 1, 0);
-      while (nuevaFecha.getDay() !== configuracion.diaSemana) {
-        nuevaFecha.setDate(nuevaFecha.getDate() - 1);
-      }
-    } else {
-      let semanaEncontrada = 0;
-      while (semanaEncontrada <= posiciones[configuracion.semanaMes]) {
-        if (nuevaFecha.getDay() === configuracion.diaSemana) {
-          if (semanaEncontrada === posiciones[configuracion.semanaMes]) break;
-          semanaEncontrada++;
-        }
-        nuevaFecha.setDate(nuevaFecha.getDate() + 1);
-      }
-    }
-
-    return nuevaFecha;
-  }
-
-  async iniciarTimer(schedule) {
-    if (!this.scrapingService) {
-      throw new Error('ScrapingService no ha sido inyectado');
-    }
-
-    const proximaEjecucion = this.calcularProximaEjecucion(schedule);
-    const ahora = new Date();
-    const delay = proximaEjecucion.getTime() - ahora.getTime();
-
-    const timer = setTimeout(async () => {
-      try {
-        const site = await Site.findById(schedule.sitioId);
-        if (site && this.scrapingService) {
-          await this.scrapingService.ejecutarScrapingSitio(site);
-        }
-        await this.actualizarSchedule(schedule.sitioId, schedule);
-      } catch (error) {
-        console.error(`Error en ejecución programada para ${schedule.sitioId}:`, error);
-      }
-    }, delay);
-
-    this.timers.set(schedule._id.toString(), timer);
-    this.schedules.set(schedule._id.toString(), schedule);
-
-    await ScrapingSchedule.findByIdAndUpdate(schedule._id, {
-      proximaEjecucion,
-      ultimaEjecucion: schedule.proximaEjecucion
-    });
   }
 
   async agregarJob(configuracion) {
     try {
+      console.log('ScheduleManagerService: Agregando nuevo job con configuración:', configuracion);
+
+      if (!configuracion.tipoFrecuencia) {
+        throw new Error('El tipo de frecuencia es requerido');
+      }
+
       const sitioExiste = await Site.findById(configuracion.sitioId);
       if (!sitioExiste) {
         throw new Error('El sitio especificado no existe');
       }
 
-      if (!configuracion.tipoFrecuencia || !configuracion.hora) {
-        throw new Error('Faltan campos requeridos (tipoFrecuencia, hora)');
+      // Validar las configuraciones
+      if (!configuracion.configuraciones || !Array.isArray(configuracion.configuraciones)) {
+        throw new Error('Las configuraciones son requeridas y deben ser un array');
       }
 
       const proximaEjecucion = configuracion.scrapingInmediato ? 
         new Date() : 
-        this.calcularProximaEjecucion(configuracion);
+        this.calcularProximaEjecucion({
+          tipoFrecuencia: configuracion.tipoFrecuencia,
+          ...configuracion.configuraciones[0]
+        });
 
-      const nuevoSchedule = new ScrapingSchedule({
-        ...configuracion,
+      const scheduleData = {
+        sitioId: configuracion.sitioId,
+        tipoFrecuencia: configuracion.tipoFrecuencia,
+        configuraciones: configuracion.configuraciones,
         proximaEjecucion,
+        prioridad: configuracion.prioridad || 1,
+        tags: configuracion.tags || [],
         activo: true
-      });
+      };
 
-      const scheduleGuardado = await nuevoSchedule.save();
+      let schedule;
+      try {
+        schedule = new ScrapingSchedule(scheduleData);
+        await schedule.validate();
+      } catch (validationError) {
+        console.error('Error de validación:', validationError);
+        throw new Error('Datos de schedule inválidos: ' + validationError.message);
+      }
+
+      const scheduleGuardado = await schedule.save();
+      console.log('Schedule guardado:', scheduleGuardado._id);
+      
       await this.iniciarTimer(scheduleGuardado);
-
       return scheduleGuardado;
+
     } catch (error) {
       console.error('Error al agregar job:', error);
       throw error;
     }
   }
 
-  async actualizarSchedule(sitioId, configuracion) {
+  async iniciarTimer(schedule) {
+    console.log(`Iniciando timer para schedule ${schedule._id}`);
+    
+    if (this.timers.has(schedule._id.toString())) {
+      clearTimeout(this.timers.get(schedule._id.toString()));
+    }
+
+    const proximaEjecucion = schedule.calcularProximaEjecucion();
+    if (!proximaEjecucion) {
+      console.log(`No hay próximas ejecuciones para el schedule ${schedule._id}`);
+      return;
+    }
+
+    const ahora = new Date();
+    const delay = proximaEjecucion.getTime() - ahora.getTime();
+
+    console.log(`Programando próxima ejecución para ${schedule.sitioId} en ${delay}ms`);
+
+    const timer = setTimeout(async () => {
+      try {
+        await this.ejecutarSchedule(schedule);
+        await this.reprogramarSchedule(schedule);
+      } catch (error) {
+        console.error(`Error en ejecución programada:`, error);
+        await this.manejarError(schedule, error);
+      }
+    }, delay);
+
+    this.timers.set(schedule._id.toString(), timer);
+    this.schedules.set(schedule._id.toString(), schedule);
+
+    await ScrapingSchedule.findByIdAndUpdate(schedule._id, {
+      proximaEjecucion,
+      ultimaEjecucion: new Date()
+    });
+  }
+
+  async ejecutarSchedule(schedule) {
+    const sitioId = schedule._id.toString();
+    
+    // Verificar si el sitio ya está siendo scrapeado
+    if (this.executingJobs.has(sitioId)) {
+      console.log(`Sitio ${sitioId} ya está siendo scrapeado. Reprogramando...`);
+      await this.bloquearSchedule(schedule, 'Ejecución simultánea detectada');
+      return;
+    }
+
     try {
-      const site = await Site.findById(sitioId);
+      this.executingJobs.add(sitioId);
+      
+      const site = await Site.findById(schedule.sitioId);
       if (!site) {
         throw new Error('Sitio no encontrado');
       }
 
-      // Validar campos requeridos
-      if (!configuracion.tipoFrecuencia || !configuracion.hora) {
-        throw new Error('Faltan campos requeridos (tipoFrecuencia, hora)');
-      }
-
-      const scheduleExistente = await ScrapingSchedule.findOne({ 
-        sitioId, 
-        activo: true 
+      await ScrapingService.scrapeSite(site);
+      
+      // Resetear contadores de error al completar exitosamente
+      await ScrapingSchedule.findByIdAndUpdate(schedule._id, {
+        'ultimoError.intentos': 0,
+        'bloqueo.bloqueado': false,
+        'bloqueo.fechaBloqueo': null,
+        'bloqueo.razon': null
       });
 
-      if (scheduleExistente) {
-        const proximaEjecucion = this.calcularProximaEjecucion(configuracion);
-        
-        // Asegurarse de que todos los campos requeridos estén presentes
-        const datosActualizados = {
-          ...scheduleExistente.toObject(),
+    } catch (error) {
+      throw error;
+    } finally {
+      this.executingJobs.delete(sitioId);
+    }
+  }
+
+  async manejarError(schedule, error) {
+    const intentosActuales = (schedule.ultimoError?.intentos || 0) + 1;
+    
+    await ScrapingSchedule.findByIdAndUpdate(schedule._id, {
+      'ultimoError.mensaje': error.message,
+      'ultimoError.fecha': new Date(),
+      'ultimoError.intentos': intentosActuales
+    });
+
+    if (intentosActuales >= 5) {
+      await this.bloquearSchedule(schedule, 'Máximo número de reintentos alcanzado');
+    } else {
+      await this.reprogramarSchedule(schedule);
+    }
+  }
+
+  async bloquearSchedule(schedule, razon) {
+    await ScrapingSchedule.findByIdAndUpdate(schedule._id, {
+      'bloqueo.bloqueado': true,
+      'bloqueo.fechaBloqueo': new Date(),
+      'bloqueo.razon': razon
+    });
+  }
+
+  async reprogramarSchedule(schedule) {
+    const updatedSchedule = await ScrapingSchedule.findById(schedule._id);
+    if (!updatedSchedule || !updatedSchedule.activo) {
+      console.log(`Schedule ${schedule._id} inactivo o eliminado`);
+      this.detenerSchedule(schedule._id);
+      return;
+    }
+
+    await this.iniciarTimer(updatedSchedule);
+  }
+
+  async actualizarSchedule(scheduleId, configuracion) {
+    console.log(`Actualizando schedule ${scheduleId}`);
+    try {
+      const scheduleExistente = await ScrapingSchedule.findById(scheduleId);
+      if (!scheduleExistente) {
+        throw new Error('Schedule no encontrado');
+      }
+
+      this.detenerSchedule(scheduleId);
+
+      const scheduleActualizado = await ScrapingSchedule.findByIdAndUpdate(
+        scheduleId,
+        {
           ...configuracion,
-          proximaEjecucion
-        };
+          proximaEjecucion: this.calcularProximaEjecucion(configuracion)
+        },
+        { new: true, runValidators: true }
+      );
 
-        const scheduleActualizado = await ScrapingSchedule.findByIdAndUpdate(
-          scheduleExistente._id,
-          datosActualizados,
-          { new: true, runValidators: true }
-        );
-
-        if (scheduleActualizado) {
-          await this.reiniciarTimer(scheduleActualizado);
-          return scheduleActualizado;
-        }
+      if (scheduleActualizado.activo) {
+        await this.iniciarTimer(scheduleActualizado);
       }
 
-      return await this.agregarJob({
-        sitioId,
-        ...configuracion
-      });
+      return scheduleActualizado;
     } catch (error) {
       console.error('Error al actualizar schedule:', error);
       throw error;
@@ -271,7 +245,7 @@ class ScheduleManagerService {
         throw new Error('Schedule no encontrado');
       }
 
-      await this.detenerSchedule(scheduleId);
+      this.detenerSchedule(scheduleId);
       schedule.activo = false;
       await schedule.save();
 
@@ -289,7 +263,17 @@ class ScheduleManagerService {
         throw new Error('Schedule no encontrado');
       }
 
+      // Resetear estados de error y bloqueo al reanudar
       schedule.activo = true;
+      schedule.bloqueo = {
+        bloqueado: false,
+        fechaBloqueo: null,
+        razon: null
+      };
+      schedule.ultimoError = {
+        intentos: 0
+      };
+
       await schedule.save();
       await this.iniciarTimer(schedule);
 
@@ -300,52 +284,35 @@ class ScheduleManagerService {
     }
   }
 
-  async reiniciarTimer(schedule) {
-    const timerId = schedule._id.toString();
-    if (this.timers.has(timerId)) {
-      clearTimeout(this.timers.get(timerId));
-      this.timers.delete(timerId);
-    }
-    await this.iniciarTimer(schedule);
-  }
-
-  async detenerSchedule(scheduleId) {
+  detenerSchedule(scheduleId) {
     const timerId = scheduleId.toString();
     if (this.timers.has(timerId)) {
       clearTimeout(this.timers.get(timerId));
       this.timers.delete(timerId);
       this.schedules.delete(timerId);
     }
+    this.executingJobs.delete(timerId);
   }
 
   async obtenerEstadoCola() {
     try {
       const schedules = await ScrapingSchedule.find({ activo: true })
         .populate('sitioId')
-        .sort({ proximaEjecucion: 1 });
+        .sort({ prioridad: -1, proximaEjecucion: 1 });
 
-      const ejecutandoActualmente = false;
-      const proximaEjecucion = schedules[0]?.proximaEjecucion || null;
+      const jobsEnEjecucion = Array.from(this.executingJobs).map(id => ({
+        id,
+        inicio: new Date()
+      }));
 
       return {
-        ejecutandoActualmente,
         jobsEnCola: schedules.length,
-        proximaEjecucion
+        jobsEnEjecucion,
+        schedules: schedules,
+        proximaEjecucion: schedules[0]?.proximaEjecucion || null
       };
     } catch (error) {
       console.error('Error al obtener estado de la cola:', error);
-      throw error;
-    }
-  }
-
-  async actualizarCola() {
-    try {
-      const schedules = await ScrapingSchedule.find({ activo: true });
-      for (const schedule of schedules) {
-        await this.reiniciarTimer(schedule);
-      }
-    } catch (error) {
-      console.error('Error al actualizar cola:', error);
       throw error;
     }
   }
@@ -355,14 +322,15 @@ class ScheduleManagerService {
       console.log('Iniciando inicialización de schedules...');
       
       const schedules = await ScrapingSchedule.find({ activo: true })
-        .populate('sitioId');
+        .populate('sitioId')
+        .sort({ prioridad: -1, proximaEjecucion: 1 });
 
       console.log(`Encontrados ${schedules.length} schedules activos`);
 
       for (const schedule of schedules) {
         try {
           if (!schedule.sitioId) {
-            console.warn(`Schedule ${schedule._id} sin sitio asociado, saltando...`);
+            console.warn(`Schedule ${schedule._id} sin sitio asociado`);
             continue;
           }
 
@@ -381,13 +349,12 @@ class ScheduleManagerService {
   }
 
   clearAll() {
-
     for (const [timerId, timer] of this.timers.entries()) {
       clearTimeout(timer);
       this.timers.delete(timerId);
     }
-
     this.schedules.clear();
+    this.executingJobs.clear();
   }
 }
 

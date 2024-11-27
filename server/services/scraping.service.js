@@ -362,6 +362,36 @@ class ScrapingService {
     }
   }
 
+  removeJob(siteId) {
+    console.log(`Removiendo job para sitio: ${siteId}`);
+    // Remover de la cola de scraping
+    this.scrapingQueue = this.scrapingQueue.filter(site => site._id.toString() !== siteId.toString());
+    // Limpiar datos del job
+    delete this.jobs[siteId];
+    delete this.lastRunTimes[siteId];
+    delete this.nextScheduledRuns[siteId];
+    console.log(`Job removido exitosamente para sitio: ${siteId}`);
+  }
+
+  async updateJob(site) {
+    console.log('ScrapingService.updateJob llamado para sitio:', site._id);
+    try {
+      if (site.activoParaScraping) {
+        // Primero remover el job existente si existe
+        this.removeJob(site._id);
+        // Luego programar el nuevo job
+        await this.scheduleJob(site);
+        console.log('Job actualizado exitosamente para sitio:', site._id);
+      } else {
+        this.removeJob(site._id);
+        console.log('Job removido para sitio:', site._id);
+      }
+    } catch (error) {
+      console.error('Error en ScrapingService.updateJob:', error);
+      throw error;
+    }
+  }
+
   async updateSiteAndHistory(siteId, estado, mensajeError, cantidadProyecciones) {
     try {
       await Site.findByIdAndUpdate(siteId, {
