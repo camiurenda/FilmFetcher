@@ -4,6 +4,7 @@ const OpenAI = require('openai');
 const Site = require('../models/site.model');
 const Projection = require('../models/projection.model');
 const ScrapingHistory = require('../models/scrapingHistory.model');
+const ScrapingSchedule = require('../models/scrapingSchedule.model');
 
 require('dotenv').config();
 
@@ -50,33 +51,31 @@ class ScrapingService {
   async getSchedule() {
     try {
       console.log('Obteniendo horarios de scraping');
-      const sitiosActivos = await Site.find({ 
-        activoParaScraping: true,
-        habilitado: true 
-      });
+      
+      // Obtener schedules activos con su información de sitio
+      const schedules = await ScrapingSchedule.find({ activo: true })
+        .populate('sitioId', 'nombre frecuenciaActualizacion');
 
-      console.log(`Encontrados ${sitiosActivos.length} sitios activos`);
+      console.log(`Encontrados ${schedules.length} schedules activos`);
 
-      const schedules = sitiosActivos.map(site => {
-        const ultimoScraping = this.lastRunTimes[site._id] || null;
-        const proximoScraping = this.calcularProximoScraping(site, ultimoScraping);
+      const scheduleInfo = schedules
+        .filter(schedule => schedule.sitioId) // Asegurarse que el sitio existe
+        .map(schedule => ({
+          siteId: schedule.sitioId._id,
+          nombre: schedule.sitioId.nombre,
+          frecuencia: schedule.tipoFrecuencia,
+          ultimoScraping: schedule.ultimaEjecucion || null,
+          proximoScraping: schedule.proximaEjecucion
+        }));
 
-        return {
-          siteId: site._id,
-          nombre: site.nombre,
-          frecuencia: site.frecuenciaActualizacion,
-          ultimoScraping: ultimoScraping,
-          proximoScraping: proximoScraping
-        };
-      });
-
-      console.log('Horarios procesados exitosamente:', schedules);
-      return schedules;
+      console.log('Horarios procesados exitosamente:', scheduleInfo);
+      return scheduleInfo;
     } catch (error) {
       console.error('Error al obtener horarios de scraping:', error);
       throw error;
     }
   }
+
   startServiceCheck() {
     this.checkServiceAvailability().then(available => {
       if (available) {
@@ -90,34 +89,6 @@ class ScrapingService {
         this.startQueueProcessor();
       }
     }, CONFIG.SERVICE_CHECK_INTERVAL);
-  }
-
-  calcularProximoScraping(site, ultimoScraping) {
-    const ahora = new Date();
-    let proximoScraping = new Date(ahora);
-
-    if (!ultimoScraping) {
-      return proximoScraping;
-    }
-
-    switch (site.frecuenciaActualizacion) {
-      case 'test':
-        proximoScraping = new Date(ultimoScraping.getTime() + 60000); // 1 minuto
-        break;
-      case 'diaria':
-        proximoScraping = new Date(ultimoScraping.getTime() + 24 * 60 * 60 * 1000);
-        break;
-      case 'semanal':
-        proximoScraping = new Date(ultimoScraping.getTime() + 7 * 24 * 60 * 60 * 1000);
-        break;
-      case 'mensual':
-        proximoScraping = new Date(ultimoScraping.getTime() + 30 * 24 * 60 * 60 * 1000);
-        break;
-      default:
-        proximoScraping = new Date(ahora.getTime() + 24 * 60 * 60 * 1000);
-    }
-
-    return proximoScraping;
   }
 
   async checkServiceAvailability() {
@@ -204,7 +175,14 @@ class ScrapingService {
         await this.updateSiteAndHistory(site._id, 'exitoso', 'Sin proyecciones encontradas', 0);
       }
 
-      this.lastRunTimes[site._id] = new Date();
+      // Actualizar el schedule después de una ejecución exitosa
+      const schedule = await ScrapingSchedule.findOne({ sitioId: site._id });
+      if (schedule) {
+        schedule.ultimaEjecucion = new Date();
+        schedule.proximaEjecucion = schedule.calcularProximaEjecucion();
+        await schedule.save();
+      }
+
     } catch (error) {
       console.error(`Error procesando sitio ${site.nombre}:`, error.message);
       await this.updateSiteAndHistory(site._id, 'fallido', error.message, 0);
@@ -421,48 +399,19 @@ class ScrapingService {
 
   async obtenerProximoScraping() {
     try {
-      const sitiosActivos = await Site.find({ 
-        activoParaScraping: true,
-        habilitado: true 
-      });
+      const schedules = await ScrapingSchedule.find({ activo: true })
+        .populate('sitioId')
+        .sort({ proximaEjecucion: 1 })
+        .limit(1);
 
-      let proximoScraping = null;
-      const ahora = new Date();
-
-      for (const sitio of sitiosActivos) {
-        const ultimaEjecucion = this.lastRunTimes[sitio._id];
-        let proximaEjecucion;
-
-        switch (sitio.frecuenciaActualizacion) {
-          case 'test':
-            proximaEjecucion = ultimaEjecucion ? 
-              new Date(ultimaEjecucion.getTime() + 60000) : ahora;
-            break;
-          case 'diaria':
-            proximaEjecucion = ultimaEjecucion ? 
-              new Date(ultimaEjecucion.getTime() + 24 * 60 * 60 * 1000) : ahora;
-            break;
-          case 'semanal':
-            proximaEjecucion = ultimaEjecucion ? 
-              new Date(ultimaEjecucion.getTime() + 7 * 24 * 60 * 60 * 1000) : ahora;
-            break;
-          case 'mensual':
-            proximaEjecucion = ultimaEjecucion ? 
-              new Date(ultimaEjecucion.getTime() + 30 * 24 * 60 * 60 * 1000) : ahora;
-            break;
-          default:
-            continue;
-        }
-
-        if (!proximoScraping || proximaEjecucion < proximoScraping.fechaScraping) {
-          proximoScraping = {
-            nombre: sitio.nombre,
-            fechaScraping: proximaEjecucion
-          };
-        }
+      if (schedules.length === 0 || !schedules[0].sitioId) {
+        return null;
       }
 
-      return proximoScraping;
+      return {
+        nombre: schedules[0].sitioId.nombre,
+        fechaScraping: schedules[0].proximaEjecucion
+      };
     } catch (error) {
       console.error('Error al obtener próximo scraping:', error);
       return null;

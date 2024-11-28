@@ -9,42 +9,6 @@ class ScheduleManagerService {
     this.executingJobs = new Set();
   }
 
-  calcularProximaEjecucion(configuracion, fechaReferencia = new Date()) {
-    const fecha = new Date(fechaReferencia);
-    
-    switch (configuracion.tipoFrecuencia) {
-      case 'test':
-        return new Date(fecha.getTime() + 60000); // 1 minuto
-        
-      case 'diaria':
-        fecha.setHours(0, 0, 0, 0);
-        fecha.setDate(fecha.getDate() + 1);
-        return fecha;
-        
-      case 'semanal':
-        fecha.setHours(0, 0, 0, 0);
-        let diasParaProximaEjecucion = 7;
-        if (configuracion.diasSemana && configuracion.diasSemana.length > 0) {
-          const diaActual = fecha.getDay();
-          const proximosDias = configuracion.diasSemana.map(dia => 
-            dia > diaActual ? dia - diaActual : 7 - (diaActual - dia)
-          );
-          diasParaProximaEjecucion = Math.min(...proximosDias);
-        }
-        fecha.setDate(fecha.getDate() + diasParaProximaEjecucion);
-        return fecha;
-        
-      case 'mensual':
-        fecha.setDate(1);
-        fecha.setHours(0, 0, 0, 0);
-        fecha.setMonth(fecha.getMonth() + 1);
-        return fecha;
-        
-      default:
-        throw new Error(`Tipo de frecuencia no válida: ${configuracion.tipoFrecuencia}`);
-    }
-  }
-
   async agregarJob(configuracion) {
     try {
       console.log('ScheduleManagerService: Agregando nuevo job con configuración:', configuracion);
@@ -63,26 +27,19 @@ class ScheduleManagerService {
         throw new Error('Las configuraciones son requeridas y deben ser un array');
       }
 
-      const proximaEjecucion = configuracion.scrapingInmediato ? 
-        new Date() : 
-        this.calcularProximaEjecucion({
-          tipoFrecuencia: configuracion.tipoFrecuencia,
-          ...configuracion.configuraciones[0]
-        });
-
-      const scheduleData = {
+      const schedule = new ScrapingSchedule({
         sitioId: configuracion.sitioId,
         tipoFrecuencia: configuracion.tipoFrecuencia,
         configuraciones: configuracion.configuraciones,
-        proximaEjecucion,
         prioridad: configuracion.prioridad || 1,
         tags: configuracion.tags || [],
-        activo: true
-      };
+        activo: true,
+        scrapingInmediato: configuracion.scrapingInmediato || false,
+        fechaInicio: configuracion.fechaInicio,
+        fechaFin: configuracion.fechaFin
+      });
 
-      let schedule;
       try {
-        schedule = new ScrapingSchedule(scheduleData);
         await schedule.validate();
       } catch (validationError) {
         console.error('Error de validación:', validationError);
@@ -108,40 +65,44 @@ class ScheduleManagerService {
       clearTimeout(this.timers.get(schedule._id.toString()));
     }
 
-    const proximaEjecucion = schedule.calcularProximaEjecucion();
-    if (!proximaEjecucion) {
-      console.log(`No hay próximas ejecuciones para el schedule ${schedule._id}`);
+    // Obtener el schedule actualizado para asegurar que tenemos la última proximaEjecucion
+    const scheduleActualizado = await ScrapingSchedule.findById(schedule._id);
+    if (!scheduleActualizado || !scheduleActualizado.activo) {
+      console.log(`Schedule ${schedule._id} inactivo o no encontrado`);
       return;
     }
 
     const ahora = new Date();
-    const delay = proximaEjecucion.getTime() - ahora.getTime();
+    const delay = scheduleActualizado.proximaEjecucion.getTime() - ahora.getTime();
 
-    console.log(`Programando próxima ejecución para ${schedule.sitioId} en ${delay}ms`);
+    if (delay <= 0) {
+      console.log(`Ejecución inmediata para ${schedule.sitioId}`);
+      this.ejecutarSchedule(scheduleActualizado).catch(error => {
+        console.error(`Error en ejecución inmediata:`, error);
+        this.manejarError(scheduleActualizado, error);
+      });
+      return;
+    }
+
+    console.log(`Programando próxima ejecución para ${schedule.sitioId} en ${delay}ms (${scheduleActualizado.proximaEjecucion})`);
 
     const timer = setTimeout(async () => {
       try {
-        await this.ejecutarSchedule(schedule);
-        await this.reprogramarSchedule(schedule);
+        await this.ejecutarSchedule(scheduleActualizado);
+        await this.reprogramarSchedule(scheduleActualizado);
       } catch (error) {
         console.error(`Error en ejecución programada:`, error);
-        await this.manejarError(schedule, error);
+        await this.manejarError(scheduleActualizado, error);
       }
     }, delay);
 
     this.timers.set(schedule._id.toString(), timer);
-    this.schedules.set(schedule._id.toString(), schedule);
-
-    await ScrapingSchedule.findByIdAndUpdate(schedule._id, {
-      proximaEjecucion,
-      ultimaEjecucion: new Date()
-    });
+    this.schedules.set(schedule._id.toString(), scheduleActualizado);
   }
 
   async ejecutarSchedule(schedule) {
     const sitioId = schedule._id.toString();
     
-    // Verificar si el sitio ya está siendo scrapeado
     if (this.executingJobs.has(sitioId)) {
       console.log(`Sitio ${sitioId} ya está siendo scrapeado. Reprogramando...`);
       await this.bloquearSchedule(schedule, 'Ejecución simultánea detectada');
@@ -157,14 +118,18 @@ class ScheduleManagerService {
       }
 
       await ScrapingService.scrapeSite(site);
+
+      // Actualizar el schedule después de una ejecución exitosa
+      schedule.ultimaEjecucion = new Date();
+      schedule.proximaEjecucion = schedule.calcularProximaEjecucion(schedule.ultimaEjecucion);
+      schedule.ultimoError = { intentos: 0 };
+      schedule.bloqueo = {
+        bloqueado: false,
+        fechaBloqueo: null,
+        razon: null
+      };
       
-      // Resetear contadores de error al completar exitosamente
-      await ScrapingSchedule.findByIdAndUpdate(schedule._id, {
-        'ultimoError.intentos': 0,
-        'bloqueo.bloqueado': false,
-        'bloqueo.fechaBloqueo': null,
-        'bloqueo.razon': null
-      });
+      await schedule.save();
 
     } catch (error) {
       throw error;
@@ -176,25 +141,29 @@ class ScheduleManagerService {
   async manejarError(schedule, error) {
     const intentosActuales = (schedule.ultimoError?.intentos || 0) + 1;
     
-    await ScrapingSchedule.findByIdAndUpdate(schedule._id, {
-      'ultimoError.mensaje': error.message,
-      'ultimoError.fecha': new Date(),
-      'ultimoError.intentos': intentosActuales
-    });
+    schedule.ultimoError = {
+      mensaje: error.message,
+      fecha: new Date(),
+      intentos: intentosActuales
+    };
 
     if (intentosActuales >= 5) {
       await this.bloquearSchedule(schedule, 'Máximo número de reintentos alcanzado');
     } else {
+      schedule.proximaEjecucion = schedule.calcularProximaEjecucion();
+      await schedule.save();
       await this.reprogramarSchedule(schedule);
     }
   }
 
   async bloquearSchedule(schedule, razon) {
-    await ScrapingSchedule.findByIdAndUpdate(schedule._id, {
-      'bloqueo.bloqueado': true,
-      'bloqueo.fechaBloqueo': new Date(),
-      'bloqueo.razon': razon
-    });
+    schedule.bloqueo = {
+      bloqueado: true,
+      fechaBloqueo: new Date(),
+      razon: razon
+    };
+    schedule.proximaEjecucion = schedule.calcularProximaEjecucion();
+    await schedule.save();
   }
 
   async reprogramarSchedule(schedule) {
@@ -218,14 +187,11 @@ class ScheduleManagerService {
 
       this.detenerSchedule(scheduleId);
 
-      const scheduleActualizado = await ScrapingSchedule.findByIdAndUpdate(
-        scheduleId,
-        {
-          ...configuracion,
-          proximaEjecucion: this.calcularProximaEjecucion(configuracion)
-        },
-        { new: true, runValidators: true }
-      );
+      // Actualizar el schedule con la nueva configuración
+      Object.assign(scheduleExistente, configuracion);
+      
+      // El pre-save middleware calculará la próxima ejecución
+      const scheduleActualizado = await scheduleExistente.save();
 
       if (scheduleActualizado.activo) {
         await this.iniciarTimer(scheduleActualizado);
@@ -263,7 +229,6 @@ class ScheduleManagerService {
         throw new Error('Schedule no encontrado');
       }
 
-      // Resetear estados de error y bloqueo al reanudar
       schedule.activo = true;
       schedule.bloqueo = {
         bloqueado: false,
@@ -274,6 +239,7 @@ class ScheduleManagerService {
         intentos: 0
       };
 
+      // El pre-save middleware calculará la próxima ejecución
       await schedule.save();
       await this.iniciarTimer(schedule);
 
@@ -334,6 +300,8 @@ class ScheduleManagerService {
             continue;
           }
 
+          // El pre-save middleware calculará la próxima ejecución si es necesario
+          await schedule.save();
           await this.iniciarTimer(schedule);
           console.log(`Schedule inicializado para sitio: ${schedule.sitioId.nombre}`);
         } catch (error) {

@@ -152,49 +152,58 @@ ScrapingScheduleSchema.index({ sitioId: 1, activo: 1 });
 ScrapingScheduleSchema.index({ proximaEjecucion: 1, prioridad: -1 });
 ScrapingScheduleSchema.index({ tags: 1 });
 
-// Middleware de validación
-ScrapingScheduleSchema.pre('save', function(next) {
-    if (!this.configuraciones || this.configuraciones.length === 0) {
-        return next(new Error('Debe especificar al menos una configuración de horario'));
-    }
-
-    // Validar que cada configuración tenga los campos necesarios según el tipo de frecuencia
-    for (const config of this.configuraciones) {
-        switch (this.tipoFrecuencia) {
-            case 'diaria':
-                if (!config.hora) {
-                    return next(new Error('Hora requerida para frecuencia diaria'));
-                }
-                break;
-            case 'semanal':
-                if (!config.hora || !config.diasSemana || config.diasSemana.length === 0) {
-                    return next(new Error('Hora y días de la semana requeridos para frecuencia semanal'));
-                }
-                break;
-            case 'mensual-dia':
-                if (!config.hora || !config.diasMes || config.diasMes.length === 0) {
-                    return next(new Error('Hora y días del mes requeridos para frecuencia mensual por día'));
-                }
-                break;
-            case 'mensual-posicion':
-                if (!config.hora || !config.semanaMes || config.diaSemana === undefined) {
-                    return next(new Error('Hora, semana del mes y día de la semana requeridos para frecuencia mensual por posición'));
-                }
-                break;
+// Middleware de validación y cálculo de próxima ejecución
+ScrapingScheduleSchema.pre('save', async function(next) {
+    // Si es un documento nuevo o se modificaron las configuraciones/frecuencia
+    if (this.isNew || this.isModified('configuraciones') || this.isModified('tipoFrecuencia')) {
+        if (!this.configuraciones || this.configuraciones.length === 0) {
+            return next(new Error('Debe especificar al menos una configuración de horario'));
         }
-    }
 
-    // Validar fechas de inicio/fin si están presentes
-    if (this.fechaInicio && this.fechaFin && this.fechaInicio > this.fechaFin) {
-        return next(new Error('La fecha de inicio debe ser anterior a la fecha de fin'));
+        // Validar que cada configuración tenga los campos necesarios según el tipo de frecuencia
+        for (const config of this.configuraciones) {
+            switch (this.tipoFrecuencia) {
+                case 'diaria':
+                    if (!config.hora) {
+                        return next(new Error('Hora requerida para frecuencia diaria'));
+                    }
+                    break;
+                case 'semanal':
+                    if (!config.hora || !config.diasSemana || config.diasSemana.length === 0) {
+                        return next(new Error('Hora y días de la semana requeridos para frecuencia semanal'));
+                    }
+                    break;
+                case 'mensual-dia':
+                    if (!config.hora || !config.diasMes || config.diasMes.length === 0) {
+                        return next(new Error('Hora y días del mes requeridos para frecuencia mensual por día'));
+                    }
+                    break;
+                case 'mensual-posicion':
+                    if (!config.hora || !config.semanaMes || config.diaSemana === undefined) {
+                        return next(new Error('Hora, semana del mes y día de la semana requeridos para frecuencia mensual por posición'));
+                    }
+                    break;
+            }
+        }
+
+        // Validar fechas de inicio/fin si están presentes
+        if (this.fechaInicio && this.fechaFin && this.fechaInicio > this.fechaFin) {
+            return next(new Error('La fecha de inicio debe ser anterior a la fecha de fin'));
+        }
+
+        // Calcular próxima ejecución solo si no es scraping inmediato
+        if (!this.scrapingInmediato) {
+            // Usar la última ejecución como referencia si existe, sino usar la fecha actual
+            const referencia = this.ultimaEjecucion || new Date();
+            this.proximaEjecucion = this.calcularProximaEjecucion(referencia);
+        }
     }
 
     next();
 });
 
 // Método para calcular la próxima ejecución
-ScrapingScheduleSchema.methods.calcularProximaEjecucion = function() {
-    const ahora = new Date();
+ScrapingScheduleSchema.methods.calcularProximaEjecucion = function(referencia = new Date()) {
     let proximaEjecucion = null;
 
     // Si está bloqueado, aplicar backoff exponencial
@@ -203,11 +212,16 @@ ScrapingScheduleSchema.methods.calcularProximaEjecucion = function() {
             Math.pow(2, this.ultimoError?.intentos || 0) * 60000, // Base: 1 minuto
             24 * 60 * 60000 // Máximo: 24 horas
         );
-        return new Date(ahora.getTime() + tiempoEspera);
+        return new Date(referencia.getTime() + tiempoEspera);
+    }
+
+    // Si es scraping inmediato, devolver la fecha actual
+    if (this.scrapingInmediato) {
+        return new Date();
     }
 
     for (const config of this.configuraciones) {
-        const fechaEjecucion = this.calcularProximaEjecucionConfig(config, ahora);
+        const fechaEjecucion = this.calcularProximaEjecucionConfig(config, referencia);
         if (!proximaEjecucion || fechaEjecucion < proximaEjecucion) {
             proximaEjecucion = fechaEjecucion;
         }

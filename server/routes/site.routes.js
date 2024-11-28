@@ -33,8 +33,24 @@ router.get('/manual', async (req, res) => {
 router.get('/scraping-schedule', async (req, res) => {
   try {
     console.log('Obteniendo horario de scraping');
-    const schedule = await ScrapingService.getSchedule();
-    res.status(200).json(schedule);
+    
+    // Obtener schedules activos con su información de sitio
+    const schedules = await ScrapingSchedule.find({ activo: true })
+      .populate('sitioId', 'nombre frecuenciaActualizacion')
+      .lean();
+
+    const scheduleInfo = schedules
+      .filter(schedule => schedule.sitioId) // Asegurarse que el sitio existe
+      .map(schedule => ({
+        siteId: schedule.sitioId._id,
+        nombre: schedule.sitioId.nombre,
+        frecuencia: schedule.tipoFrecuencia,
+        ultimoScraping: schedule.ultimaEjecucion || null,
+        proximoScraping: schedule.proximaEjecucion
+      }));
+
+    console.log('Horarios de scraping obtenidos:', scheduleInfo);
+    res.status(200).json(scheduleInfo);
   } catch (error) {
     console.error('Error al obtener horario de scraping:', error);
     res.status(500).json({ message: error.message });
@@ -102,12 +118,11 @@ router.post('/add', async (req, res) => {
         tags,
         prioridad,
         fechaInicio,
-        fechaFin,
-        proximaEjecucion: new Date()
+        fechaFin
       });
 
-      const proximaEjecucion = newSchedule.calcularProximaEjecucion();
-      newSchedule.proximaEjecucion = proximaEjecucion;
+      // Usar el método del modelo para calcular la próxima ejecución
+      newSchedule.proximaEjecucion = newSchedule.calcularProximaEjecucion();
       await newSchedule.save();
     }
 
@@ -250,7 +265,7 @@ router.put('/:id', async (req, res) => {
 
     // Actualizar o crear schedule si es necesario
     if (updateData.tipoCarga === 'scraping' && scheduleData.configuraciones?.length > 0) {
-      const schedule = await ScrapingSchedule.findOne({ sitioId: id });
+      let schedule = await ScrapingSchedule.findOne({ sitioId: id });
       
       if (schedule) {
         // Actualizar schedule existente
@@ -259,13 +274,12 @@ router.put('/:id', async (req, res) => {
         await schedule.save();
       } else {
         // Crear nuevo schedule
-        const newSchedule = new ScrapingSchedule({
+        schedule = new ScrapingSchedule({
           sitioId: id,
-          ...scheduleData,
-          proximaEjecucion: new Date()
+          ...scheduleData
         });
-        newSchedule.proximaEjecucion = newSchedule.calcularProximaEjecucion();
-        await newSchedule.save();
+        schedule.proximaEjecucion = schedule.calcularProximaEjecucion();
+        await schedule.save();
       }
     } else if (updateData.tipoCarga === 'manual') {
       // Eliminar schedule si existe
