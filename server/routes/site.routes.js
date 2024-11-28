@@ -29,34 +29,6 @@ router.get('/manual', async (req, res) => {
   }
 });
 
-// Obtener el horario de scraping
-router.get('/scraping-schedule', async (req, res) => {
-  try {
-    console.log('Obteniendo horario de scraping');
-    
-    // Obtener schedules activos con su información de sitio
-    const schedules = await ScrapingSchedule.find({ activo: true })
-      .populate('sitioId', 'nombre frecuenciaActualizacion')
-      .lean();
-
-    const scheduleInfo = schedules
-      .filter(schedule => schedule.sitioId) // Asegurarse que el sitio existe
-      .map(schedule => ({
-        siteId: schedule.sitioId._id,
-        nombre: schedule.sitioId.nombre,
-        frecuencia: schedule.tipoFrecuencia,
-        ultimoScraping: schedule.ultimaEjecucion || null,
-        proximoScraping: schedule.proximaEjecucion
-      }));
-
-    console.log('Horarios de scraping obtenidos:', scheduleInfo);
-    res.status(200).json(scheduleInfo);
-  } catch (error) {
-    console.error('Error al obtener horario de scraping:', error);
-    res.status(500).json({ message: error.message });
-  }
-});
-
 // Obtener el historial de scraping
 router.get('/scraping-history', async (req, res) => {
   try {
@@ -193,36 +165,15 @@ router.get('/scraping-diagnostic', async (req, res) => {
 // Obtener un sitio por ID
 router.get('/:id', async (req, res) => {
   try {
-    console.log('Buscando sitio por ID:', req.params.id);
+    console.log('Obteniendo sitio por ID:', req.params.id);
     const site = await Site.findById(req.params.id);
     if (!site) {
-      console.log('Sitio no encontrado');
       return res.status(404).json({ message: 'Sitio no encontrado' });
     }
-
-    // Buscar el schedule activo asociado al sitio
-    const schedule = await ScrapingSchedule.findOne({ 
-      sitioId: req.params.id,
-      activo: true 
-    });
-    
-    const sitioConSchedule = {
-      ...site.toObject(),
-      tipoFrecuencia: schedule?.tipoFrecuencia,
-      configuraciones: schedule?.configuraciones,
-      tags: schedule?.tags,
-      prioridad: schedule?.prioridad,
-      fechaInicio: schedule?.fechaInicio,
-      fechaFin: schedule?.fechaFin,
-      ultimoError: schedule?.ultimoError,
-      bloqueo: schedule?.bloqueo
-    };
-
-    console.log('Sitio encontrado:', sitioConSchedule);
-    res.status(200).json(sitioConSchedule);
+    res.status(200).json(site);
   } catch (error) {
-    console.error('Error al obtener sitio por ID:', error);
-    res.status(500).json({ message: error.message });
+    console.error('Error al obtener sitio:', error);
+    res.status(400).json({ message: error.message });
   }
 });
 

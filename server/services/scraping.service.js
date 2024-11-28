@@ -135,110 +135,161 @@ class ScrapingService {
 
     console.log(`[Scraping Service] Iniciando procesamiento para sitio: ${site.nombre} (${site.url})`);
     try {
-      console.log(`[Scraping Service] Enviando petición al microservicio para ${site.url}`);
-      // Usar el microservicio Puppeteer para el scraping
-      const scrapeResponse = await axios.post(
-        `${SCRAPING_SERVICE_URL}/api/scrape`,
-        { url: site.url },
-        { 
-          timeout: CONFIG.SCRAPING_TIMEOUT,
-          headers: {
-            'X-Source': 'FilmFetcher',
-            'Content-Type': 'application/json'
-          }
+        const scrapeResponse = await axios.post(
+            `${SCRAPING_SERVICE_URL}/api/scrape`,
+            { url: site.url },
+            { 
+                timeout: CONFIG.SCRAPING_TIMEOUT,
+                headers: {
+                    'X-Source': 'FilmFetcher',
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        if (!scrapeResponse.data?.success || !scrapeResponse.data?.data) {
+            throw new Error(scrapeResponse.data?.error || 'No se recibió contenido HTML del microservicio');
         }
-      );
 
-      console.log(`[Scraping Service] Respuesta recibida del microservicio para ${site.nombre}:`, {
-        success: scrapeResponse.data?.success,
-        status: scrapeResponse.data?.status,
-        htmlLength: scrapeResponse.data?.data?.length || 0
-      });
+        const htmlContent = scrapeResponse.data.data;
+        const extractedInfo = this.extractBasicInfo(htmlContent);
+        const openAIResponse = await this.openAIScrape(site, extractedInfo);
+        
+        let proyecciones = openAIResponse.proyecciones || openAIResponse.Proyecciones;
+        if (!Array.isArray(proyecciones)) {
+            throw new Error('Formato de respuesta OpenAI inválido');
+        }
 
-      if (!scrapeResponse.data?.success || !scrapeResponse.data?.data) {
-        throw new Error(scrapeResponse.data?.error || 'No se recibió contenido HTML del microservicio');
+        const projections = await this.processAIResponse(proyecciones, site._id);
+
+        if (projections.length > 0) {
+            await this.insertProjections(projections, site);
+            await this.updateSiteAndHistory(site._id, 'exitoso', null, projections.length);
+        } else {
+            await this.updateSiteAndHistory(site._id, 'exitoso', 'Sin proyecciones encontradas', 0);
+        }
+
+        // Actualizar el schedule
+        try {
+          const schedule = await ScrapingSchedule.findOne({ sitioId: site._id });
+          if (schedule) {
+              console.log(`[Scraping Service] Schedule encontrado para ${site.nombre}:`, {
+                  id: schedule._id,
+                  tipoFrecuencia: schedule.tipoFrecuencia,
+                  configuraciones: schedule.configuraciones,
+                  ultimaEjecucion: schedule.ultimaEjecucion
+              });
+              
+              // Establecer última ejecución
+              schedule.ultimaEjecucion = new Date();
+              
+              // Verificar configuraciones existentes antes de calcular próxima ejecución
+              if (!schedule.tipoFrecuencia || !schedule.configuraciones || schedule.configuraciones.length === 0) {
+                  // Solo establecer valores por defecto si realmente no existen
+                  console.log(`[Scraping Service] Configuración incompleta, buscando en la base de datos`);
+                  
+                  // Intentar obtener la última configuración conocida
+                  const siteConfig = await Site.findById(site._id).select('configuracionScraping');
+                  
+                  if (siteConfig?.configuracionScraping) {
+                      // Usar configuración existente del sitio
+                      schedule.tipoFrecuencia = schedule.tipoFrecuencia || siteConfig.configuracionScraping.tipoFrecuencia;
+                      if (!schedule.configuraciones || schedule.configuraciones.length === 0) {
+                          schedule.configuraciones = [{
+                              hora: siteConfig.configuracionScraping.hora || '09:00',
+                              diasSemana: siteConfig.configuracionScraping.diasSemana || [1, 2, 3, 4, 5],
+                              descripcion: 'Configuración recuperada'
+                          }];
+                      }
+                  } else {
+                      // Solo si no hay absolutamente ninguna configuración, usar valores por defecto
+                      console.log(`[Scraping Service] No se encontró configuración previa, usando valores por defecto`);
+                      schedule.tipoFrecuencia = schedule.tipoFrecuencia || 'diaria';
+                      if (!schedule.configuraciones || schedule.configuraciones.length === 0) {
+                          schedule.configuraciones = [{
+                              hora: '09:00',
+                              diasSemana: [1, 2, 3, 4, 5],
+                              descripcion: 'Configuración por defecto'
+                          }];
+                      }
+                  }
+              }
+
+              const nextExecution = schedule.calcularProximaEjecucion();
+              console.log(`[Scraping Service] Próxima ejecución calculada:`, nextExecution);
+
+              if (!nextExecution) {
+                  throw new Error('No se pudo calcular la próxima ejecución');
+              }
+              
+              schedule.proximaEjecucion = nextExecution;
+
+              // Guardar cambios
+              await schedule.save();
+              
+              console.log(`[Scraping Service] Schedule actualizado. Próxima ejecución: ${schedule.proximaEjecucion}`);
+
+              // Programar próxima ejecución
+              if (schedule.activo) {
+                  const timeUntilNext = schedule.proximaEjecucion.getTime() - new Date().getTime();
+                  if (timeUntilNext > 0) {
+                      const timerId = schedule._id.toString();
+                      if (this.scheduledTimers.has(timerId)) {
+                          clearTimeout(this.scheduledTimers.get(timerId));
+                      }
+                      const timer = setTimeout(() => this.processSingleSite(site), timeUntilNext);
+                      this.scheduledTimers.set(timerId, timer);
+                      console.log(`[Scraping Service] Próxima ejecución programada en ${timeUntilNext}ms`);
+                  }
+              }
+          } else {
+              // Crear nuevo schedule solo si realmente no existe
+              console.log(`[Scraping Service] No se encontró schedule para ${site.nombre}, creando uno nuevo`);
+
+              // Intentar obtener configuración existente del sitio
+              const siteConfig = await Site.findById(site._id).select('configuracionScraping');
+              
+              const newSchedule = new ScrapingSchedule({
+                  sitioId: site._id,
+                  tipoFrecuencia: siteConfig?.configuracionScraping?.tipoFrecuencia || 'diaria',
+                  configuraciones: siteConfig?.configuracionScraping?.hora ? [{
+                      hora: siteConfig.configuracionScraping.hora,
+                      diasSemana: siteConfig.configuracionScraping.diasSemana || [1, 2, 3, 4, 5],
+                      descripcion: 'Configuración recuperada'
+                  }] : [{
+                      hora: '09:00',
+                      diasSemana: [1, 2, 3, 4, 5],
+                      descripcion: 'Configuración inicial'
+                  }],
+                  activo: true,
+                  ultimaEjecucion: new Date()
+              });
+              
+              newSchedule.proximaEjecucion = newSchedule.calcularProximaEjecucion();
+              await newSchedule.save();
+              console.log(`[Scraping Service] Nuevo schedule creado para ${site.nombre}`);
+          }
+      } catch (scheduleError) {
+          console.error(`[Scraping Service] Error detallado actualizando schedule:`, {
+              error: scheduleError.message,
+              stack: scheduleError.stack,
+              site: site.nombre,
+              siteId: site._id
+          });
+          throw scheduleError;
       }
 
-      const htmlContent = scrapeResponse.data.data;
-      console.log(`[Scraping Service] Extrayendo información básica del HTML (${htmlContent.length} caracteres)`);
-      const extractedInfo = this.extractBasicInfo(htmlContent);
-      console.log(`[Scraping Service] Información extraída (${extractedInfo.length} caracteres). Enviando a OpenAI`);
-
-      const openAIResponse = await this.openAIScrape(site, extractedInfo);
-      console.log(`[Scraping Service] Respuesta recibida de OpenAI:`, {
-        proyeccionesCount: openAIResponse.proyecciones?.length || openAIResponse.Proyecciones?.length || 0
-      });
+  } catch (error) {
+      console.error(`[Scraping Service] Error procesando sitio ${site.nombre}:`, error);
+      await this.updateSiteAndHistory(site._id, 'fallido', error.message, 0);
       
-      let proyecciones = openAIResponse.proyecciones || openAIResponse.Proyecciones;
-      if (!Array.isArray(proyecciones)) {
-        throw new Error('Formato de respuesta OpenAI inválido');
-      }
-
-      console.log(`[Scraping Service] Procesando ${proyecciones.length} proyecciones de OpenAI`);
-      const projections = this.processAIResponse(proyecciones, site._id);
-      console.log(`[Scraping Service] Procesadas ${projections.length} proyecciones válidas`);
-
-      if (projections.length > 0) {
-        console.log(`[Scraping Service] Insertando ${projections.length} proyecciones en la base de datos`);
-        await this.insertProjections(projections, site);
-        await this.updateSiteAndHistory(site._id, 'exitoso', null, projections.length);
-        console.log(`[Scraping Service] ${projections.length} proyecciones procesadas exitosamente para ${site.nombre}`);
-      } else {
-        console.log(`[Scraping Service] No se encontraron proyecciones válidas para ${site.nombre}`);
-        await this.updateSiteAndHistory(site._id, 'exitoso', 'Sin proyecciones encontradas', 0);
-      }
-
-      // Asegurar que existe un schedule para el sitio
-      let schedule = await ScrapingSchedule.findOne({ sitioId: site._id });
-      if (!schedule) {
-        // Crear un nuevo schedule con valores por defecto
-        schedule = new ScrapingSchedule({
-          sitioId: site._id,
-          tipoFrecuencia: 'diaria', // Valor por defecto
-          configuraciones: [{
-            hora: '00:00' // Hora por defecto
-          }],
-          activo: true
-        });
-      }
-
-      // Actualizar el schedule
-      schedule.ultimaEjecucion = new Date();
-      schedule.proximaEjecucion = schedule.calcularProximaEjecucion();
-      await schedule.save();
-      console.log(`[Scraping Service] Schedule actualizado para ${site.nombre}. Próxima ejecución: ${schedule.proximaEjecucion}`);
-
-      // Schedule next execution
-      const timeUntilNext = schedule.proximaEjecucion.getTime() - new Date().getTime();
-      if (timeUntilNext > 0) {
-        const timerId = schedule._id.toString();
-        const timer = setTimeout(async () => {
-          await this.processSingleSite(site);
-          this.scheduledTimers.delete(timerId);
-        }, timeUntilNext);
-        this.scheduledTimers.set(timerId, timer);
-        console.log(`[Scraping Service] Programada próxima ejecución para ${site.nombre} en ${timeUntilNext}ms`);
-      }
-
-    } catch (error) {
-      const errorMessage = error.response?.data?.error || error.message;
-      console.error(`[Scraping Service] Error procesando sitio ${site.nombre}:`, {
-        error: errorMessage,
-        stack: error.stack,
-        responseData: error.response?.data
-      });
-      await this.updateSiteAndHistory(site._id, 'fallido', errorMessage, 0);
-      
-      setTimeout(async () => {
-        await this.processSingleSite(site);
-      }, CONFIG.RETRY_DELAY);
-
       if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-        this.serviceAvailable = false;
+          this.serviceAvailable = false;
       }
-    }
-  }
 
+      setTimeout(() => this.processSingleSite(site), CONFIG.RETRY_DELAY);
+  }
+}
   extractBasicInfo(htmlContent) {
     console.log('[Scraping Service] Iniciando extracción de información básica');
     const $ = cheerio.load(htmlContent);
@@ -329,65 +380,59 @@ class ScrapingService {
   }
 
   async processAIResponse(proyecciones, siteId) {
-    const currentYear = new Date().getFullYear();
     console.log(`[Scraping Service] Procesando ${proyecciones.length} proyecciones de OpenAI`);
     
     try {
-      const site = await Site.findById(siteId);
-      if (!site) {
-        throw new Error('Sitio no encontrado');
-      }
+        const site = await Site.findById(siteId);
+        if (!site) {
+            throw new Error('Sitio no encontrado');
+        }
 
-      const processedProjections = proyecciones
-        .map(p => {
-          try {
-            let fechaHora = new Date(p.fechaHora || p.FechaHora);
-            
-            if (fechaHora < new Date()) {
-              fechaHora.setFullYear(currentYear);
-            } else {
-              fechaHora.setFullYear(Math.max(fechaHora.getFullYear(), currentYear));
-            }
+        const processedProjections = proyecciones
+            .map(p => {
+                try {
+                    let fechaHora = new Date(p.fechaHora || p.FechaHora);
+                    
+                    if (isNaN(fechaHora.getTime())) {
+                        console.log('[Scraping Service] Fecha inválida:', p.fechaHora);
+                        return null;
+                    }
 
-            let precio = 0;
-            if (site.esGratis) {
-              precio = 0;
-            } else {
-              precio = parseFloat(p.precio || p.Precio) || site.precioDefault || null;
-            }
+                    let precio = 0;
+                    if (site.esGratis) {
+                        precio = 0;
+                    } else {
+                        precio = parseFloat(p.precio || p.Precio) || site.precioDefault || 0;
+                    }
 
-            const projection = {
-              nombrePelicula: p.nombre || p.Nombre,
-              fechaHora: fechaHora,
-              director: p.director || p.Director || 'No especificado',
-              genero: p.genero || p.Genero || 'No especificado',
-              duracion: parseInt(p.duracion || p.Duracion) || 0,
-              sala: p.sala || p.Sala || 'No especificada',
-              precio: precio,
-              sitio: siteId
-            };
+                    const projection = {
+                        nombrePelicula: p.nombre || p.Nombre,
+                        fechaHora: fechaHora,
+                        director: p.director || p.Director || 'No especificado',
+                        genero: p.genero || p.Genero || 'No especificado',
+                        duracion: parseInt(p.duracion || p.Duracion) || 0,
+                        sala: p.sala || p.Sala || 'No especificada',
+                        precio: precio,
+                        sitio: siteId,
+                        nombreCine: site.nombre,
+                        claveUnica: `${p.nombre || p.Nombre}-${fechaHora.toISOString()}-${siteId}`
+                    };
 
-            console.log(`[Scraping Service] Proyección procesada:`, {
-              nombre: projection.nombrePelicula,
-              fecha: projection.fechaHora,
-              sala: projection.sala
-            });
+                    return projection;
+                } catch (error) {
+                    console.error('[Scraping Service] Error procesando proyección individual:', error);
+                    return null;
+                }
+            })
+            .filter(p => p && p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
 
-            return projection;
-          } catch (error) {
-            console.error('[Scraping Service] Error procesando proyección individual:', error);
-            return null;
-          }
-        })
-        .filter(p => p && p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
-
-      console.log(`[Scraping Service] Procesamiento completado: ${processedProjections.length} proyecciones válidas`);
-      return processedProjections;
+        console.log(`[Scraping Service] Procesamiento completado: ${processedProjections.length} proyecciones válidas`);
+        return processedProjections;
     } catch (error) {
-      console.error('[Scraping Service] Error al procesar respuesta del sitio:', error);
-      return [];
+        console.error('[Scraping Service] Error al procesar respuesta del sitio:', error);
+        return [];
     }
-  }
+}
 
   async insertProjections(projections, site) {
     console.log(`[Scraping Service] Iniciando inserción de ${projections.length} proyecciones para ${site.nombre}`);

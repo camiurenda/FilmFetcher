@@ -1,6 +1,7 @@
 const express = require('express');
 const ScrapingSchedule = require('../models/scrapingSchedule.model');
 const ScrapingQueueService = require('../services/schedule.service');
+const Site = require('../models/site.model');
 const router = express.Router();
 
 router.get('/', async (req, res) => {
@@ -134,12 +135,50 @@ router.post('/sync', async (req, res) => {
 router.get('/sitio/:sitioId', async (req, res) => {
   try {
     console.log('Buscando schedule para sitio:', req.params.sitioId);
-    const schedule = await ScrapingSchedule.findOne({ sitioId: req.params.sitioId })
-      .populate('sitioId');
+    const schedule = await ScrapingSchedule.findOne({ 
+      sitioId: req.params.sitioId,
+      activo: true 
+    }).populate('sitioId');
     
     if (!schedule) {
       console.log('No se encontró schedule para el sitio');
+      const site = await Site.findById(req.params.sitioId);
+      
+      // Si el sitio tiene configuración, crear respuesta con esos datos
+      if (site?.configuracionScraping) {
+        console.log('Usando configuración del sitio:', site.configuracionScraping);
+        return res.json({
+          tipoFrecuencia: site.configuracionScraping.tipoFrecuencia,
+          configuraciones: [{
+            hora: site.configuracionScraping.hora,
+            diasSemana: site.configuracionScraping.diasSemana,
+            diaMes: site.configuracionScraping.diaMes,
+            semanaMes: site.configuracionScraping.semanaMes,
+            diaSemana: site.configuracionScraping.diaSemana,
+            descripcion: 'Configuración del sitio'
+          }],
+          sitioId: site
+        });
+      }
+      
       return res.status(404).json({ message: 'Schedule no encontrado' });
+    }
+
+    // Asegurar que el schedule tenga las configuraciones correctas
+    if (!schedule.configuraciones || schedule.configuraciones.length === 0) {
+      const site = await Site.findById(req.params.sitioId);
+      if (site?.configuracionScraping) {
+        schedule.configuraciones = [{
+          hora: site.configuracionScraping.hora,
+          diasSemana: site.configuracionScraping.diasSemana,
+          diaMes: site.configuracionScraping.diaMes,
+          semanaMes: site.configuracionScraping.semanaMes,
+          diaSemana: site.configuracionScraping.diaSemana,
+          descripcion: 'Configuración recuperada del sitio'
+        }];
+        schedule.tipoFrecuencia = site.configuracionScraping.tipoFrecuencia;
+        await schedule.save();
+      }
     }
 
     console.log('Schedule encontrado:', schedule);
