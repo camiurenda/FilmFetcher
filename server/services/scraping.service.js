@@ -20,7 +20,7 @@ const CONFIG = {
   BATCH_SIZE: 1,
   SERVICE_CHECK_INTERVAL: 300000,
   RETRY_DELAY: 600000,
-  SCHEDULE_CHECK_INTERVAL: 30000,
+  SCHEDULE_CHECK_INTERVAL: 3600000,
   EXECUTION_THRESHOLD: 10000
 };
 
@@ -58,17 +58,25 @@ class ScrapingService {
   }
 
   startScheduleCheck() {
-    // Clear any existing interval
     if (this.scheduleCheckInterval) {
+      console.log('[Schedule Check] Limpiando intervalo anterior');
       clearInterval(this.scheduleCheckInterval);
     }
 
-    // Check for upcoming schedules periodically
+    console.log('[Schedule Check] Iniciando nuevo ciclo de verificación');
+    console.log(`[Schedule Check] Intervalo configurado: ${CONFIG.SCHEDULE_CHECK_INTERVAL}ms`);
+
     this.scheduleCheckInterval = setInterval(async () => {
-      if (!this.serviceAvailable) return;
+      if (!this.serviceAvailable) {
+        console.log('[Schedule Check] Servicio no disponible, saltando verificación');
+        return;
+      }
 
       try {
+        console.log('\n[Schedule Check] ===== Inicio de verificación =====');
         const now = new Date();
+        console.log(`[Schedule Check] Hora actual: ${now.toLocaleString()}`);
+
         const upcoming = await ScrapingSchedule.find({
           activo: true,
           proximaEjecucion: {
@@ -77,31 +85,67 @@ class ScrapingService {
           }
         }).populate('sitioId');
 
+        console.log(`[Schedule Check] Encontrados ${upcoming.length} schedules próximos`);
+
+        // Mostrar todos los schedules activos y su próxima ejecución
+        const allActiveSchedules = await ScrapingSchedule.find({ 
+          activo: true 
+        }).populate('sitioId').sort({ proximaEjecucion: 1 });
+
+        console.log('\n[Schedule Check] Estado general de schedules:');
+        allActiveSchedules.forEach(schedule => {
+          if (!schedule.sitioId) return;
+          
+          const timeUntil = schedule.proximaEjecucion.getTime() - now.getTime();
+          const minutes = Math.floor(timeUntil / 60000);
+          const seconds = Math.floor((timeUntil % 60000) / 1000);
+          const isScheduled = this.scheduledTimers.has(schedule._id.toString());
+
+          console.log(`- ${schedule.sitioId.nombre}:
+            Próxima ejecución: ${schedule.proximaEjecucion.toLocaleString()}
+            Tiempo restante: ${minutes}min ${seconds}s
+            Estado: ${isScheduled ? 'Programado' : 'Pendiente'}
+            Frecuencia: ${schedule.tipoFrecuencia}
+            Última ejecución: ${schedule.ultimaEjecucion ? schedule.ultimaEjecucion.toLocaleString() : 'Nunca'}`);
+        });
+
         upcoming.forEach(schedule => {
           if (!schedule.sitioId) return;
 
           const timerId = schedule._id.toString();
-          if (this.scheduledTimers.has(timerId)) return;
+          if (this.scheduledTimers.has(timerId)) {
+            console.log(`[Schedule Check] ${schedule.sitioId.nombre} ya está programado`);
+            return;
+          }
 
           const timeUntilExecution = schedule.proximaEjecucion.getTime() - now.getTime();
-          if (timeUntilExecution <= 0) return;
+          if (timeUntilExecution <= 0) {
+            console.log(`[Schedule Check] ${schedule.sitioId.nombre} tiempo de ejecución ya pasó`);
+            return;
+          }
 
-          // Schedule the execution
           const timer = setTimeout(async () => {
-            console.log(`Ejecutando scraping programado para ${schedule.sitioId.nombre}`);
+            console.log(`\n[Ejecución] ===== Iniciando scraping para ${schedule.sitioId.nombre} =====`);
             await this.processSingleSite(schedule.sitioId);
             this.scheduledTimers.delete(timerId);
+            console.log(`[Ejecución] Scraping completado para ${schedule.sitioId.nombre}`);
           }, timeUntilExecution);
 
           this.scheduledTimers.set(timerId, timer);
-          console.log(`Programado scraping para ${schedule.sitioId.nombre} en ${timeUntilExecution}ms`);
+          
+          const minutes = Math.floor(timeUntilExecution / 60000);
+          const seconds = Math.floor((timeUntilExecution % 60000) / 1000);
+          console.log(`[Schedule Check] ${schedule.sitioId.nombre} programado para ejecutar en ${minutes}min ${seconds}s`);
         });
+
+        console.log('\n[Schedule Check] Timers activos:', this.scheduledTimers.size);
+        console.log('[Schedule Check] ===== Fin de verificación =====\n');
+
       } catch (error) {
-        console.error('Error al verificar próximos schedules:', error);
+        console.error('[Schedule Check] Error en verificación:', error);
       }
     }, CONFIG.SCHEDULE_CHECK_INTERVAL);
   }
-
   startServiceCheck() {
     this.checkServiceAvailability().then(available => {
       this.serviceAvailable = available;

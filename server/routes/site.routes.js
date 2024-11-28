@@ -187,7 +187,11 @@ router.put('/:id', async (req, res) => {
     // Extraer datos del schedule
     const scheduleData = {
       tipoFrecuencia: updateData.tipoFrecuencia,
-      configuraciones: updateData.configuraciones,
+      configuraciones: [{
+        hora: updateData.configuracionScraping?.hora,
+        diasSemana: updateData.configuracionScraping?.diasSemana || [],
+        descripcion: 'Configuración actualizada del sitio'
+      }],
       tags: updateData.tags,
       prioridad: updateData.prioridad,
       fechaInicio: updateData.fechaInicio,
@@ -197,7 +201,6 @@ router.put('/:id', async (req, res) => {
 
     // Limpiar datos que no pertenecen al modelo Site
     delete updateData.tipoFrecuencia;
-    delete updateData.configuraciones;
     delete updateData.tags;
     delete updateData.prioridad;
     delete updateData.fechaInicio;
@@ -210,10 +213,6 @@ router.put('/:id', async (req, res) => {
     updateData.activoParaScraping = updateData.tipoCarga === 'scraping';
     updateData.frecuenciaActualizacion = scheduleData.tipoFrecuencia;
 
-    if (updateData.tipoCarga === 'manual') {
-      delete updateData.frecuenciaActualizacion;
-    }
-
     const updatedSite = await Site.findByIdAndUpdate(
       id,
       updateData,
@@ -225,34 +224,37 @@ router.put('/:id', async (req, res) => {
     }
 
     // Actualizar o crear schedule si es necesario
-    if (updateData.tipoCarga === 'scraping' && scheduleData.configuraciones?.length > 0) {
-      // Desactivar todos los schedules existentes para este sitio
-      await ScrapingSchedule.updateMany(
-        { sitioId: id },
-        { activo: false }
-      );
-
-      // Crear nuevo schedule
-      const newSchedule = new ScrapingSchedule({
-        sitioId: id,
-        ...scheduleData,
-        activo: true
-      });
-      newSchedule.proximaEjecucion = newSchedule.calcularProximaEjecucion();
-      await newSchedule.save();
+    if (updateData.tipoCarga === 'scraping') {
+      // Obtener schedule existente
+      let schedule = await ScrapingSchedule.findOne({ sitioId: id });
       
-    } else if (updateData.tipoCarga === 'manual') {
-      // Desactivar todos los schedules si existen
-      await ScrapingSchedule.updateMany(
-        { sitioId: id },
-        { activo: false }
-      );
+      if (schedule) {
+        // Actualizar schedule existente
+        schedule.tipoFrecuencia = scheduleData.tipoFrecuencia;
+        schedule.configuraciones = scheduleData.configuraciones;
+        schedule.activo = true;
+        await schedule.save();
+        console.log('Schedule actualizado:', {
+          id: schedule._id,
+          configuraciones: schedule.configuraciones
+        });
+      } else {
+        // Crear nuevo schedule
+        schedule = new ScrapingSchedule({
+          sitioId: id,
+          tipoFrecuencia: scheduleData.tipoFrecuencia,
+          configuraciones: scheduleData.configuraciones,
+          activo: true,
+          proximaEjecucion: new Date()
+        });
+        await schedule.save();
+        console.log('Nuevo schedule creado:', {
+          id: schedule._id,
+          configuraciones: schedule.configuraciones
+        });
+      }
     }
 
-    // Actualizar el job de scraping
-    await ScrapingService.updateJob(updatedSite);
-
-    console.log('Sitio actualizado exitosamente:', updatedSite._id);
     res.status(200).json(updatedSite);
   } catch (error) {
     console.error('Error al actualizar sitio:', error);

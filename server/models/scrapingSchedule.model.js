@@ -257,8 +257,15 @@ ScrapingScheduleSchema.methods.calcularProximaEjecucion = function(referencia = 
 // Método para calcular la próxima ejecución de una configuración específica
 ScrapingScheduleSchema.methods.calcularProximaEjecucionConfig = function(config, referencia) {
     const fecha = new Date(referencia);
-    const [hora, minuto] = config.hora.split(':').map(Number);
+    let [hora, minuto] = config.hora.split(':').map(Number);
     
+    // Validar hora y minuto
+    if (isNaN(hora) || isNaN(minuto)) {
+      console.error('Hora inválida:', config.hora);
+      hora = 0;
+      minuto = 0;
+    }
+
     switch (this.tipoFrecuencia) {
         case 'diaria':
             fecha.setHours(hora, minuto, 0, 0);
@@ -267,24 +274,21 @@ ScrapingScheduleSchema.methods.calcularProximaEjecucionConfig = function(config,
             }
             break;
 
-        case 'semanal':
-            fecha.setHours(hora, minuto, 0, 0);
-            
-            // Primero verificamos si el día actual es válido
-            if (config.diasSemana.includes(fecha.getDay())) {
-                // Si el día es válido pero la hora ya pasó, buscamos el próximo día válido
-                if (fecha <= referencia) {
-                    do {
-                        fecha.setDate(fecha.getDate() + 1);
-                    } while (!config.diasSemana.includes(fecha.getDay()));
-                }
-            } else {
-                // Si el día actual no es válido, buscamos el próximo día válido
-                do {
-                    fecha.setDate(fecha.getDate() + 1);
-                } while (!config.diasSemana.includes(fecha.getDay()));
-            }
-            break;
+    case 'semanal':
+      fecha.setHours(hora, minuto, 0, 0);
+      
+      if (config.diasSemana.includes(fecha.getDay())) {
+        if (fecha <= referencia) {
+          do {
+            fecha.setDate(fecha.getDate() + 1);
+          } while (!config.diasSemana.includes(fecha.getDay()));
+        }
+      } else {
+        do {
+          fecha.setDate(fecha.getDate() + 1);
+        } while (!config.diasSemana.includes(fecha.getDay()));
+      }
+      break;
 
         case 'mensual-dia':
             fecha.setHours(hora, minuto, 0, 0);
