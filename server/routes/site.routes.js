@@ -111,6 +111,12 @@ router.post('/add', async (req, res) => {
     const savedSite = await newSite.save();
 
     if (tipoCarga === 'scraping' && configuraciones?.length > 0) {
+      // Desactivar cualquier schedule existente para este sitio
+      await ScrapingSchedule.updateMany(
+        { sitioId: savedSite._id },
+        { activo: false }
+      );
+
       const newSchedule = new ScrapingSchedule({
         sitioId: savedSite._id,
         tipoFrecuencia,
@@ -194,8 +200,12 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Sitio no encontrado' });
     }
 
-    // Buscar el schedule asociado al sitio
-    const schedule = await ScrapingSchedule.findOne({ sitioId: req.params.id });
+    // Buscar el schedule activo asociado al sitio
+    const schedule = await ScrapingSchedule.findOne({ 
+      sitioId: req.params.id,
+      activo: true 
+    });
+    
     const sitioConSchedule = {
       ...site.toObject(),
       tipoFrecuencia: schedule?.tipoFrecuencia,
@@ -265,25 +275,27 @@ router.put('/:id', async (req, res) => {
 
     // Actualizar o crear schedule si es necesario
     if (updateData.tipoCarga === 'scraping' && scheduleData.configuraciones?.length > 0) {
-      let schedule = await ScrapingSchedule.findOne({ sitioId: id });
+      // Desactivar todos los schedules existentes para este sitio
+      await ScrapingSchedule.updateMany(
+        { sitioId: id },
+        { activo: false }
+      );
+
+      // Crear nuevo schedule
+      const newSchedule = new ScrapingSchedule({
+        sitioId: id,
+        ...scheduleData,
+        activo: true
+      });
+      newSchedule.proximaEjecucion = newSchedule.calcularProximaEjecucion();
+      await newSchedule.save();
       
-      if (schedule) {
-        // Actualizar schedule existente
-        Object.assign(schedule, scheduleData);
-        schedule.proximaEjecucion = schedule.calcularProximaEjecucion();
-        await schedule.save();
-      } else {
-        // Crear nuevo schedule
-        schedule = new ScrapingSchedule({
-          sitioId: id,
-          ...scheduleData
-        });
-        schedule.proximaEjecucion = schedule.calcularProximaEjecucion();
-        await schedule.save();
-      }
     } else if (updateData.tipoCarga === 'manual') {
-      // Eliminar schedule si existe
-      await ScrapingSchedule.findOneAndDelete({ sitioId: id });
+      // Desactivar todos los schedules si existen
+      await ScrapingSchedule.updateMany(
+        { sitioId: id },
+        { activo: false }
+      );
     }
 
     // Actualizar el job de scraping

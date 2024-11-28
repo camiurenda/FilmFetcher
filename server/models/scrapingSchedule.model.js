@@ -245,8 +245,20 @@ ScrapingScheduleSchema.methods.calcularProximaEjecucionConfig = function(config,
 
         case 'semanal':
             fecha.setHours(hora, minuto, 0, 0);
-            while (!config.diasSemana.includes(fecha.getDay()) || fecha <= referencia) {
-                fecha.setDate(fecha.getDate() + 1);
+            
+            // Primero verificamos si el día actual es válido
+            if (config.diasSemana.includes(fecha.getDay())) {
+                // Si el día es válido pero la hora ya pasó, buscamos el próximo día válido
+                if (fecha <= referencia) {
+                    do {
+                        fecha.setDate(fecha.getDate() + 1);
+                    } while (!config.diasSemana.includes(fecha.getDay()));
+                }
+            } else {
+                // Si el día actual no es válido, buscamos el próximo día válido
+                do {
+                    fecha.setDate(fecha.getDate() + 1);
+                } while (!config.diasSemana.includes(fecha.getDay()));
             }
             break;
 
