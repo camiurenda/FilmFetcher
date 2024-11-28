@@ -20,7 +20,7 @@ const CONFIG = {
   BATCH_SIZE: 1,
   SERVICE_CHECK_INTERVAL: 300000,
   RETRY_DELAY: 600000,
-  SCHEDULE_CHECK_INTERVAL: 3600000,
+  SCHEDULE_CHECK_INTERVAL: 30000,
   EXECUTION_THRESHOLD: 10000
 };
 
@@ -81,7 +81,7 @@ class ScrapingService {
           activo: true,
           proximaEjecucion: {
             $gt: now,
-            $lt: new Date(now.getTime() + CONFIG.SCHEDULE_CHECK_INTERVAL)
+            $lt: new Date(now.getTime() + 3600000)
           }
         }).populate('sitioId');
 
