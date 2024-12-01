@@ -96,6 +96,16 @@ const ViewSite = () => {
       title: 'URL',
       dataIndex: 'url',
       key: 'url',
+      render: (url) => (
+        <a 
+          href={url} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-blue-500 hover:text-blue-700 hover:underline"
+        >
+          {url}
+        </a>
+      ),
     },
     {
       title: 'Dirección',
