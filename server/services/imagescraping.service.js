@@ -4,9 +4,6 @@ const Projection = require('../models/projection.model');
 const ScrapingHistory = require('../models/scrapingHistory.model');
 require('dotenv').config();
 
-/**
- * Servicio para extraer información de carteleras desde imágenes usando OpenAI
- */
 class ImageScrapingService {
   constructor() {
     this.openaiApiKey = process.env.OPENAI_API_KEY;
@@ -14,12 +11,10 @@ class ImageScrapingService {
     this.INITIAL_RETRY_DELAY = 1000;
   }
 
-  /**
-   * Método principal para procesar una imagen y extraer proyecciones
-   */
   async scrapeFromImage(imageUrl, sitioId) {
     console.log(`Iniciando scraping desde imagen para el sitio ID: ${sitioId}`);
     try {
+      // Validamos el sitio una sola vez al inicio
       const site = await Site.findById(sitioId);
       if (!site) {
         throw new Error('Sitio no encontrado');
@@ -33,10 +28,14 @@ class ImageScrapingService {
           
           if (projections && projections.length > 0) {
             console.log(`Intento ${intento}: ${projections.length} proyecciones extraídas`);
-            const preparedProjections = this.prepareProjectionsForDB(projections, sitioId, site.nombre);
-            await this.saveProjections(preparedProjections);
-            await this.updateSiteAndHistory(sitioId, 'exitoso', null, projections.length);
-            return preparedProjections;
+            // Pasamos el objeto site completo en lugar del ID
+            const processedProjections = await this.processAIResponse(projections, site);
+            if (processedProjections.length > 0) {
+              const preparedProjections = this.prepareProjectionsForDB(processedProjections, sitioId, site.nombre);
+              await this.saveProjections(preparedProjections);
+              await this.updateSiteAndHistory(sitioId, 'exitoso', null, projections.length);
+              return preparedProjections;
+            }
           }
         } catch (error) {
           lastError = error;
@@ -61,9 +60,6 @@ class ImageScrapingService {
     }
   }
 
-  /**
-   * Procesa la imagen usando OpenAI Vision
-   */
   async openAIScrapeImage(imageUrl) {
     console.log('Iniciando análisis de imagen con OpenAI...');
     
@@ -146,33 +142,27 @@ IMPORTANTE:
         throw new Error(`Respuesta inválida: ${validation.error}`);
       }
 
-      return this.processAIResponse(validation.data.proyecciones);
+      return validation.data.proyecciones;
     } catch (error) {
       console.error('Error en OpenAI scrape:', error);
       throw error;
     }
   }
 
-  /**
-   * Limpia y formatea la respuesta de OpenAI
-   */
   preprocessOpenAIResponse(content) {
     try {
-      // Eliminar cualquier texto antes del primer '{'
       const startIndex = content.indexOf('{');
       if (startIndex === -1) throw new Error('No se encontró JSON válido');
       content = content.substring(startIndex);
       
-      // Eliminar cualquier texto después del último '}'
       const endIndex = content.lastIndexOf('}');
       if (endIndex === -1) throw new Error('No se encontró JSON válido');
       content = content.substring(0, endIndex + 1);
       
-      // Limpiar el contenido
       content = content
-        .replace(/\s+/g, ' ')               // Normalizar espacios
-        .replace(/'/g, '"')                 // Reemplazar comillas simples
-        .replace(/[\u2018\u2019]/g, '"')   // Reemplazar comillas curvas
+        .replace(/\s+/g, ' ')
+        .replace(/'/g, '"')
+        .replace(/[\u2018\u2019]/g, '"')
         .trim();
       
       return content;
@@ -182,9 +172,6 @@ IMPORTANTE:
     }
   }
 
-  /**
-   * Valida la estructura y contenido de la respuesta
-   */
   validateResponse(content) {
     try {
       const parsedData = JSON.parse(content);
@@ -202,7 +189,6 @@ IMPORTANTE:
       for (let i = 0; i < parsedData.proyecciones.length; i++) {
         const proj = parsedData.proyecciones[i];
         
-        // Verificar campos requeridos
         for (const campo of camposRequeridos) {
           if (!proj.hasOwnProperty(campo)) {
             return { 
@@ -212,7 +198,6 @@ IMPORTANTE:
           }
         }
 
-        // Validar tipos de datos
         if (typeof proj.nombre !== 'string' || 
             typeof proj.director !== 'string' || 
             typeof proj.genero !== 'string' || 
@@ -223,7 +208,6 @@ IMPORTANTE:
           };
         }
 
-        // Validar fecha
         if (!Date.parse(proj.fechaHora)) {
           return { 
             isValid: false, 
@@ -241,35 +225,26 @@ IMPORTANTE:
     }
   }
 
-  async processAIResponse(proyecciones, sitioId) {
-    try {
-      const site = await Site.findById(sitioId);
-      if (!site) {
-        throw new Error('Sitio no encontrado');
+  // Modificado para recibir el objeto site en lugar del sitioId
+  async processAIResponse(proyecciones, site) {
+    return proyecciones.map(p => {
+      let precio = 0;
+      if (site.esGratis) {
+        precio = 0;
+      } else {
+        precio = parseFloat(p.precio || p.Precio) || site.precioDefault || null;
       }
 
-      return proyecciones.map(p => {
-        let precio = 0;
-        if (site.esGratis) {
-          precio = 0;
-        } else {
-          precio = parseFloat(p.precio || p.Precio) || site.precioDefault || null;
-        }
-
-        return {
-          nombrePelicula: p.nombre || p.Nombre || 'Sin título',
-          fechaHora: new Date(p.fechaHora || p.FechaHora),
-          director: p.director || p.Director || 'No especificado',
-          genero: p.genero || p.Genero || 'No especificado',
-          duracion: parseInt(p.duracion || p.Duracion) || 0,
-          sala: p.sala || p.Sala || 'No especificada',
-          precio: precio
-        };
-      }).filter(p => p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
-    } catch (error) {
-      console.error('Error al procesar respuesta de imagen:', error);
-      return [];
-    }
+      return {
+        nombrePelicula: p.nombre || p.Nombre || 'Sin título',
+        fechaHora: new Date(p.fechaHora || p.FechaHora),
+        director: p.director || p.Director || 'No especificado',
+        genero: p.genero || p.Genero || 'No especificado',
+        duracion: parseInt(p.duracion || p.Duracion) || 0,
+        sala: p.sala || p.Sala || 'No especificada',
+        precio: precio
+      };
+    }).filter(p => p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
   }
   
   prepareProjectionsForDB(projections, sitioId, nombreSitio) {
@@ -290,9 +265,6 @@ IMPORTANTE:
     }));
   }
 
-  /**
-   * Guarda las proyecciones en la base de datos
-   */
   async saveProjections(projections) {
     const results = [];
     for (const projection of projections) {
@@ -319,9 +291,6 @@ IMPORTANTE:
     return results;
   }
 
-  /**
-   * Actualiza el historial de scraping
-   */
   async updateSiteAndHistory(siteId, estado, mensajeError, cantidadProyecciones) {
     try {
       const historialEntry = await ScrapingHistory.create({
