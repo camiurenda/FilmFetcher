@@ -1,6 +1,6 @@
-// site.service.js
 import axios from 'axios';
 import API_URL from '../config/api';
+import dayjs from 'dayjs';
 
 class SiteService {
   async obtenerSitioConSchedule(id) {
@@ -24,7 +24,7 @@ class SiteService {
           tipoFrecuencia: scheduleExistente.tipoFrecuencia,
           configuraciones: scheduleExistente.configuraciones.map(config => ({
             ...config,
-            hora: config.hora ? new Date(`1970-01-01T${config.hora}`) : null
+            hora: config.hora ? dayjs(config.hora, 'HH:mm') : null
           }))
         };
       }
@@ -40,14 +40,24 @@ class SiteService {
   async agregarSitio(datos) {
     try {
       console.log('Agregando nuevo sitio:', datos);
-      const responseSitio = await axios.post(`${API_URL}/api/sites/add`, datos);
+      
+      // Formatear configuraciones antes de enviar
+      const datosFormateados = {
+        ...datos,
+        configuraciones: datos.configuraciones?.map(config => ({
+          ...config,
+          hora: config.hora ? dayjs(config.hora).format('HH:mm') : '09:00'
+        }))
+      };
+
+      const responseSitio = await axios.post(`${API_URL}/api/sites/add`, datosFormateados);
       const sitioId = responseSitio.data._id;
 
-      if (datos.tipoCarga === 'scraping') {
+      if (datos.tipoCarga === 'scraping' && datos.configuraciones?.length > 0) {
         const scheduleData = {
           sitioId,
           tipoFrecuencia: datos.tipoFrecuencia,
-          configuraciones: datos.configuraciones
+          configuraciones: datosFormateados.configuraciones
         };
 
         await axios.post(`${API_URL}/api/scraping-schedule`, scheduleData);
@@ -63,27 +73,38 @@ class SiteService {
   async actualizarSitio(id, datos) {
     try {
       console.log('Actualizando sitio:', { id, datos });
-      const responseSitio = await axios.put(`${API_URL}/api/sites/${id}`, datos);
+      
+      // Formatear configuraciones antes de enviar
+      const datosFormateados = {
+        ...datos,
+        configuraciones: datos.configuraciones?.map(config => ({
+          ...config,
+          hora: config.hora ? dayjs(config.hora).format('HH:mm') : '09:00'
+        }))
+      };
 
-      if (datos.tipoCarga === 'scraping') {
+      const responseSitio = await axios.put(`${API_URL}/api/sites/${id}`, datosFormateados);
+
+      if (datos.tipoCarga === 'scraping' && datos.configuraciones?.length > 0) {
         const scheduleData = {
           sitioId: id,
           tipoFrecuencia: datos.tipoFrecuencia,
-          configuraciones: datos.configuraciones.map(config => ({
-            ...config,
-            hora: config.hora instanceof Date ? 
-              config.hora.toTimeString().slice(0, 5) : 
-              config.hora
-          }))
+          configuraciones: datosFormateados.configuraciones
         };
 
-        const schedules = await axios.get(`${API_URL}/api/scraping-schedule`);
-        const scheduleExistente = schedules.data.find(s => s.sitioId === id);
-
-        if (scheduleExistente) {
-          await axios.put(`${API_URL}/api/scraping-schedule/${scheduleExistente._id}`, scheduleData);
-        } else {
-          await axios.post(`${API_URL}/api/scraping-schedule`, scheduleData);
+        try {
+          const scheduleResponse = await axios.get(`${API_URL}/api/scraping-schedule/sitio/${id}`);
+          if (scheduleResponse.data._id) {
+            await axios.put(`${API_URL}/api/scraping-schedule/${scheduleResponse.data._id}`, scheduleData);
+          } else {
+            await axios.post(`${API_URL}/api/scraping-schedule`, scheduleData);
+          }
+        } catch (error) {
+          if (error.response?.status === 404) {
+            await axios.post(`${API_URL}/api/scraping-schedule`, scheduleData);
+          } else {
+            throw error;
+          }
         }
       }
 

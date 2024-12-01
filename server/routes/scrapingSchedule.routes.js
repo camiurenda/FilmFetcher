@@ -1,192 +1,205 @@
 const express = require('express');
-const ScrapingSchedule = require('../models/scrapingSchedule.model');
-const ScrapingQueueService = require('../services/schedule.service');
 const Site = require('../models/site.model');
+const scheduleService = require('../services/schedule.service');
+const ScrapingHistory = require('../models/scrapingHistory.model');
 const router = express.Router();
 
 router.get('/', async (req, res) => {
-  try {
-    console.log('Obteniendo todos los schedules');
-    const schedules = await ScrapingSchedule.find()
-      .populate('sitioId')
-      .lean();
-    console.log(`Se encontraron ${schedules.length} schedules`);
-    res.json(schedules);
-  } catch (error) {
-    console.error('Error al obtener schedules:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-
-router.post('/', async (req, res) => {
-  try {
-    const {
-      sitioId,
-      tipoFrecuencia,
-      configuraciones,
-      fechaInicio,
-      fechaFin,
-      scrapingInmediato
-    } = req.body;
-
-    const scheduleExistente = await ScrapingSchedule.findOne({ 
-      sitioId, 
-      activo: true 
-    });
-
-    if (scheduleExistente) {
-      console.log('Actualizando schedule existente', scheduleExistente._id);
-      const scheduleActualizado = await ScrapingQueueService.actualizarSchedule(
-        scheduleExistente._id,
-        req.body
-      );
-      return res.json(scheduleActualizado);
+    try {
+        console.log('Obteniendo todos los sitios habilitados');
+        const sites = await Site.find({ habilitado: true });
+        res.status(200).json(sites || []);
+    } catch (error) {
+        console.error('Error al obtener sitios:', error);
+        res.status(500).json({ message: error.message });
     }
-
-    console.log('Creando nuevo schedule');
-    const nuevoSchedule = await ScrapingQueueService.agregarJob({
-      sitioId,
-      tipoFrecuencia,
-      configuraciones,
-      fechaInicio,
-      fechaFin,
-      scrapingInmediato: scrapingInmediato || false
-    });
-
-    res.status(201).json(nuevoSchedule);
-  } catch (error) {
-    console.error('Error al crear/actualizar schedule:', error);
-    res.status(400).json({ 
-      mensaje: 'Error al procesar schedule',
-      error: error.message 
-    });
-  }
 });
 
-router.get('/cola/estado', async (req, res) => {
-  try {
-    const estadoCola = await ScrapingQueueService.obtenerEstadoCola();
-    res.json(estadoCola);
-  } catch (error) {
-    console.error('Error al obtener estado de la cola:', error);
-    res.status(500).json({ 
-      mensaje: 'Error al obtener estado de la cola',
-      error: error.message 
-    });
-  }
+router.get('/manual', async (req, res) => {
+    try {
+        console.log('Obteniendo sitios de carga manual');
+        const sitios = await Site.find({ tipoCarga: 'manual', habilitado: true });
+        res.status(200).json(sitios);
+    } catch (error) {
+        console.error('Error al obtener sitios manuales:', error);
+        res.status(500).json({ message: error.message });
+    }
 });
 
-router.post('/:id/pausar', async (req, res) => {
-  try {
-    const schedulePausado = await ScrapingQueueService.pausarJob(req.params.id);
-    res.json(schedulePausado);
-  } catch (error) {
-    console.error('Error al pausar schedule:', error);
-    res.status(500).json({ 
-      mensaje: 'Error al pausar schedule',
-      error: error.message 
-    });
-  }
-});
+router.post('/add', async (req, res) => {
+    try {
+        console.log('Datos recibidos para nuevo sitio:', req.body);
+        const { 
+            nombre, url, direccion, tipo, tipoCarga, 
+            tipoFrecuencia, configuracion, usuarioCreador 
+        } = req.body;
 
-router.post('/:id/reanudar', async (req, res) => {
-  try {
-    const scheduleReanudado = await ScrapingQueueService.reanudarJob(req.params.id);
-    res.json(scheduleReanudado);
-  } catch (error) {
-    console.error('Error al reanudar schedule:', error);
-    res.status(500).json({ 
-      mensaje: 'Error al reanudar schedule',
-      error: error.message 
-    });
-  }
+        if (!nombre || !url || !tipoCarga || !usuarioCreador) {
+            return res.status(400).json({ message: 'Faltan campos requeridos' });
+        }
+
+        const newSite = new Site({
+            nombre,
+            url,
+            direccion,
+            tipo,
+            tipoCarga,
+            usuarioCreador,
+            habilitado: true,
+            activoParaScraping: tipoCarga === 'scraping'
+        });
+
+        const savedSite = await newSite.save();
+
+        if (tipoCarga === 'scraping' && tipoFrecuencia && configuracion) {
+            try {
+                await scheduleService.agregarSchedule(savedSite._id, {
+                    tipoFrecuencia,
+                    hora: configuracion.hora,
+                    diasSemana: configuracion.diasSemana,
+                    diaMes: configuracion.diaMes
+                });
+            } catch (scheduleError) {
+                console.error('Error al crear schedule:', scheduleError);
+                // No fallamos la creación del sitio si falla el schedule
+            }
+        }
+
+        console.log('Sitio guardado exitosamente:', savedSite._id);
+        res.status(201).json(savedSite);
+    } catch (error) {
+        console.error('Error al guardar el sitio:', error);
+        res.status(400).json({ message: error.message });
+    }
 });
 
 router.put('/:id', async (req, res) => {
-  try {
-    const scheduleActualizado = await ScrapingQueueService.actualizarSchedule(
-      req.params.id,
-      req.body
-    );
-    res.json(scheduleActualizado);
-  } catch (error) {
-    console.error('Error al actualizar schedule:', error);
-    res.status(400).json({ 
-      mensaje: 'Error al actualizar schedule',
-      error: error.message 
-    });
-  }
+    try {
+        console.log('Actualizando sitio:', req.params.id);
+        const { id } = req.params;
+        const updateData = { ...req.body };
+
+        // Extraer datos de scheduling
+        const scheduleData = {
+            tipoFrecuencia: updateData.tipoFrecuencia,
+            configuracion: {
+                hora: updateData.configuracion?.hora,
+                diasSemana: updateData.configuracion?.diasSemana || [],
+                diaMes: updateData.configuracion?.diaMes
+            }
+        };
+
+        // Limpiar datos que no pertenecen al modelo Site
+        delete updateData.tipoFrecuencia;
+        delete updateData.configuracion;
+
+        const updatedSite = await Site.findByIdAndUpdate(
+            id,
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedSite) {
+            return res.status(404).json({ message: 'Sitio no encontrado' });
+        }
+
+        // Si es sitio de scraping, actualizar schedule
+        if (updateData.tipoCarga === 'scraping' && scheduleData.tipoFrecuencia) {
+            try {
+                await scheduleService.agregarSchedule(updatedSite._id, scheduleData);
+            } catch (scheduleError) {
+                console.error('Error al actualizar schedule:', scheduleError);
+            }
+        }
+
+        res.status(200).json(updatedSite);
+    } catch (error) {
+        console.error('Error al actualizar el sitio:', error);
+        res.status(400).json({ message: error.message });
+    }
 });
 
-router.post('/sync', async (req, res) => {
-  try {
-    await ScrapingQueueService.actualizarCola();
-    res.json({ mensaje: 'Cola actualizada correctamente' });
-  } catch (error) {
-    console.error('Error al sincronizar schedules:', error);
-    res.status(500).json({ 
-      mensaje: 'Error al sincronizar schedules',
-      error: error.message 
-    });
-  }
+router.put('/disable/:id', async (req, res) => {
+    try {
+        console.log('Deshabilitando sitio:', req.params.id);
+        const updatedSite = await Site.findByIdAndUpdate(
+            req.params.id,
+            { habilitado: false },
+            { new: true }
+        );
+
+        if (!updatedSite) {
+            return res.status(404).json({ message: 'Sitio no encontrado' });
+        }
+
+        // Pausar schedule si existe
+        try {
+            await scheduleService.pausarSchedule(req.params.id);
+        } catch (scheduleError) {
+            console.error('Error al pausar schedule:', scheduleError);
+        }
+
+        res.status(200).json(updatedSite);
+    } catch (error) {
+        console.error('Error al deshabilitar sitio:', error);
+        res.status(400).json({ message: error.message });
+    }
 });
 
-router.get('/sitio/:sitioId', async (req, res) => {
-  try {
-    console.log('Buscando schedule para sitio:', req.params.sitioId);
-    const schedule = await ScrapingSchedule.findOne({ 
-      sitioId: req.params.sitioId,
-      activo: true 
-    }).populate('sitioId');
-    
-    if (!schedule) {
-      console.log('No se encontró schedule para el sitio');
-      const site = await Site.findById(req.params.sitioId);
-      
-      // Si el sitio tiene configuración, crear respuesta con esos datos
-      if (site?.configuracionScraping) {
-        console.log('Usando configuración del sitio:', site.configuracionScraping);
-        return res.json({
-          tipoFrecuencia: site.configuracionScraping.tipoFrecuencia,
-          configuraciones: [{
-            hora: site.configuracionScraping.hora,
-            diasSemana: site.configuracionScraping.diasSemana,
-            diaMes: site.configuracionScraping.diaMes,
-            semanaMes: site.configuracionScraping.semanaMes,
-            diaSemana: site.configuracionScraping.diaSemana,
-            descripcion: 'Configuración del sitio'
-          }],
-          sitioId: site
-        });
-      }
-      
-      return res.status(404).json({ message: 'Schedule no encontrado' });
-    }
+router.put('/enable/:id', async (req, res) => {
+    try {
+        console.log('Habilitando sitio:', req.params.id);
+        const updatedSite = await Site.findByIdAndUpdate(
+            req.params.id,
+            { habilitado: true },
+            { new: true }
+        );
 
-    // Asegurar que el schedule tenga las configuraciones correctas
-    if (!schedule.configuraciones || schedule.configuraciones.length === 0) {
-      const site = await Site.findById(req.params.sitioId);
-      if (site?.configuracionScraping) {
-        schedule.configuraciones = [{
-          hora: site.configuracionScraping.hora,
-          diasSemana: site.configuracionScraping.diasSemana,
-          diaMes: site.configuracionScraping.diaMes,
-          semanaMes: site.configuracionScraping.semanaMes,
-          diaSemana: site.configuracionScraping.diaSemana,
-          descripcion: 'Configuración recuperada del sitio'
-        }];
-        schedule.tipoFrecuencia = site.configuracionScraping.tipoFrecuencia;
-        await schedule.save();
-      }
-    }
+        if (!updatedSite) {
+            return res.status(404).json({ message: 'Sitio no encontrado' });
+        }
 
-    console.log('Schedule encontrado:', schedule);
-    res.json(schedule);
-  } catch (error) {
-    console.error('Error al obtener schedule por sitio:', error);
-    res.status(500).json({ error: error.message });
-  }
+        // Reanudar schedule si el sitio es de scraping
+        if (updatedSite.tipoCarga === 'scraping') {
+            try {
+                await scheduleService.reanudarSchedule(req.params.id);
+            } catch (scheduleError) {
+                console.error('Error al reanudar schedule:', scheduleError);
+            }
+        }
+
+        res.status(200).json(updatedSite);
+    } catch (error) {
+        console.error('Error al habilitar sitio:', error);
+        res.status(400).json({ message: error.message });
+    }
+});
+
+router.get('/scraping-history', async (req, res) => {
+    try {
+        console.log('Obteniendo historial de scraping');
+        const history = await ScrapingHistory.find()
+            .populate('siteId', 'nombre')
+            .sort({ fechaScraping: -1 });
+        res.status(200).json(history);
+    } catch (error) {
+        console.error('Error al obtener historial:', error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
+router.get('/:id', async (req, res) => {
+    try {
+        console.log('Obteniendo sitio por ID:', req.params.id);
+        const site = await Site.findById(req.params.id);
+        if (!site) {
+            return res.status(404).json({ message: 'Sitio no encontrado' });
+        }
+        res.status(200).json(site);
+    } catch (error) {
+        console.error('Error al obtener sitio:', error);
+        res.status(400).json({ message: error.message });
+    }
 });
 
 module.exports = router;

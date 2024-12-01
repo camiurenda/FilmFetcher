@@ -57,18 +57,11 @@ app.use(cors({
   credentials: true
 }));
 
-// Rutas principales
 app.use('/api/projections', projectionRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/scraping-schedule', scrapingScheduleRoutes);
 app.use('/api/scraping-history', scrapingHistoryRoutes);
-
-// IMPORTANTE: Registrar la ruta de sites después de las otras rutas específicas
-// y solo una vez
 app.use('/api/sites', siteRoutes);
-
-// Eliminar esta línea para evitar el doble registro
-// app.use('/api', siteRoutes);
 
 const originalConsoleLog = console.log;
 console.log = (...args) => {
