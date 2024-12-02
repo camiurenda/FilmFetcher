@@ -10,6 +10,7 @@ const scrapingScheduleRoutes = require('../routes/scrapingSchedule.routes');
 const scrapingHistoryRoutes = require('../routes/scrapingHistory.routes');
 const statsRoutes = require('../routes/stats.routes');
 
+
 require('dotenv').config();
 
 const config = {
