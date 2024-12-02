@@ -58,11 +58,11 @@ app.use(cors({
   credentials: true
 }));
 
+app.use('/api/sites', siteRoutes);
 app.use('/api/projections', projectionRoutes);
-app.use('/api/stats', statsRoutes);
 app.use('/api/scraping-schedule', scrapingScheduleRoutes);
 app.use('/api/scraping-history', scrapingHistoryRoutes);
-app.use('/api/sites', siteRoutes);
+app.use('/api/stats', statsRoutes);
 
 const originalConsoleLog = console.log;
 console.log = (...args) => {

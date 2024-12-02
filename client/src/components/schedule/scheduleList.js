@@ -16,6 +16,16 @@ import API_URL from '../../config/api';
 const { Text, Title } = Typography;
 const { confirm } = Modal;
 
+const ajustarHora = (fecha) => {
+  if (!fecha) return null;
+  const fechaMoment = moment(fecha);
+  // En producción no ajustamos nada, en desarrollo restamos 3 horas
+  if (process.env.NODE_ENV !== 'production') {
+    fechaMoment.subtract(3, 'hours');
+  }
+  return fechaMoment;
+};
+
 const ScheduleList = ({ onEditSchedule }) => {
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,17 +38,16 @@ const ScheduleList = ({ onEditSchedule }) => {
         axios.get(`${API_URL}/api/scraping-schedule/cola/estado`)
       ]);
 
-      // Convertir las fechas a objetos moment y ajustar al timezone local
-      const schedulesConFechasLocales = schedulesResponse.data.map(schedule => ({
+      const schedulesAjustados = schedulesResponse.data.map(schedule => ({
         ...schedule,
-        proximaEjecucion: moment.utc(schedule.proximaEjecucion).local(),
-        ultimaEjecucion: schedule.ultimaEjecucion ? moment.utc(schedule.ultimaEjecucion).local() : null
+        proximaEjecucion: ajustarHora(schedule.proximaEjecucion),
+        ultimaEjecucion: ajustarHora(schedule.ultimaEjecucion)
       }));
 
-      setSchedules(schedulesConFechasLocales);
+      setSchedules(schedulesAjustados);
       setEstadoCola({
         ...colaResponse.data,
-        proximaEjecucion: colaResponse.data.proximaEjecucion ? moment.utc(colaResponse.data.proximaEjecucion).local() : null
+        proximaEjecucion: ajustarHora(colaResponse.data.proximaEjecucion)
       });
     } catch (error) {
       console.error('Error al cargar schedules:', error);
