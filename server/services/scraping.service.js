@@ -14,36 +14,41 @@ class ScrapingService {
     }
 
     async initializeJobs() {
-        console.log('Iniciando servicio de scraping...');
+        console.log('🚀 [FilmFetcher] Iniciando servicio de scraping...');
         try {
             await this.verificarServicioScraping();
             await scheduleService.inicializar();
-            console.log('Servicio de scraping iniciado correctamente');
+            console.log('✅ [FilmFetcher] Servicio de scraping iniciado correctamente');
         } catch (error) {
-            console.error('Error al iniciar servicio de scraping:', error);
+            console.error('❌ [FilmFetcher] Error al iniciar servicio de scraping:', error);
             throw error;
         }
     }
 
     async verificarServicioScraping() {
         try {
+            console.log('🔍 [FilmFetcher] Verificando disponibilidad del microservicio en:', SCRAPING_SERVICE_URL);
             await axios.get(`${SCRAPING_SERVICE_URL}/api/health`);
-            console.log('Servicio de scraping externo disponible');
+            console.log('✅ [FilmFetcher] Microservicio de scraping disponible');
             return true;
         } catch (error) {
-            console.error('Servicio de scraping externo no disponible:', error.message);
+            console.error('❌ [FilmFetcher] Microservicio de scraping no disponible:', {
+                error: error.message,
+                url: SCRAPING_SERVICE_URL
+            });
             return false;
         }
     }
 
+
     async scrapeSite(site) {
-        console.log(`==================== INICIO DE SCRAPING PARA ${site.nombre} ====================`);
+        console.log(`\n🎬 [FilmFetcher] INICIO SCRAPING: ${site.nombre}`);
+        console.log(`📍 URL: ${site.url}`);
         let respuestaOpenAI = '';
         let causaFallo = '';
 
         try {
-            // Obtener HTML del servicio externo
-            console.log(`Solicitando scraping de ${site.url} al servicio externo`);
+            console.log('🤖 [FilmFetcher] Solicitando scraping al microservicio...');
             const scrapeResponse = await axios.post(
                 `${SCRAPING_SERVICE_URL}/api/scrape`,
                 { url: site.url },
@@ -56,13 +61,25 @@ class ScrapingService {
                 }
             );
 
+            console.log('📊 [FilmFetcher] Respuesta del microservicio:', {
+                status: scrapeResponse.status,
+                success: scrapeResponse.data?.success,
+                contentLength: scrapeResponse.data?.data?.length || 0
+            });
+
             if (!scrapeResponse.data?.success || !scrapeResponse.data?.data) {
                 throw new Error(scrapeResponse.data?.error || 'No se recibió contenido HTML del servicio');
             }
 
             const htmlContent = scrapeResponse.data.data;
+            console.log('🧠 [FilmFetcher] Enviando contenido a OpenAI para análisis...');
             const openAIResponse = await this.openAIScrape(site, htmlContent);
             respuestaOpenAI = JSON.stringify(openAIResponse);
+            
+            console.log('📝 [FilmFetcher] Respuesta de OpenAI:', {
+                longitud: respuestaOpenAI.length,
+                proyeccionesEncontradas: openAIResponse.proyecciones?.length || 0
+            });
 
             let proyecciones = openAIResponse.proyecciones || openAIResponse.Proyecciones;
             if (!Array.isArray(proyecciones)) {
@@ -71,24 +88,31 @@ class ScrapingService {
             }
 
             const projections = this.processAIResponse(proyecciones, site._id);
+            console.log(`📌 [FilmFetcher] Proyecciones procesadas: ${projections.length}`);
 
             if (projections.length > 0) {
                 await this.insertProjections(projections, site);
-                console.log(`${projections.length} proyecciones procesadas para ${site.nombre}`);
+                console.log(`✅ [FilmFetcher] ${projections.length} proyecciones guardadas para ${site.nombre}`);
                 await this.updateSiteAndHistory(site._id, 'exitoso', null, projections.length, respuestaOpenAI);
             } else {
                 causaFallo = 'No se encontraron proyecciones válidas';
-                console.log(causaFallo);
+                console.log('⚠️ [FilmFetcher]', causaFallo);
                 await this.updateSiteAndHistory(site._id, 'exitoso', causaFallo, 0, respuestaOpenAI);
             }
 
             return { success: true, proyecciones: projections };
 
         } catch (error) {
-            console.error(`Error en scraping de ${site.nombre}:`, error);
+            console.error('❌ [FilmFetcher] Error en scraping:', {
+                sitio: site.nombre,
+                error: error.message,
+                stack: error.stack,
+                causaFallo
+            });
             await this.updateSiteAndHistory(site._id, 'fallido', error.message, 0, respuestaOpenAI, causaFallo);
             throw error;
         }
+        console.log(`\n🎬 [FilmFetcher] FIN SCRAPING: ${site.nombre}\n`);
     }
 
     async openAIScrape(site, extractedInfo) {
