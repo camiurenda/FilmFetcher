@@ -27,19 +27,44 @@ class ScrapingService {
 
     async verificarServicioScraping() {
         try {
-            console.log('🔍 [FilmFetcher] Verificando disponibilidad del microservicio en:', SCRAPING_SERVICE_URL);
-            await axios.get(`${SCRAPING_SERVICE_URL}/api/health`);
-            console.log('✅ [FilmFetcher] Microservicio de scraping disponible');
+            console.log('🔍 [FilmFetcher] Verificando microservicio en:', SCRAPING_SERVICE_URL);
+            const response = await axios.get(`${SCRAPING_SERVICE_URL}/api/health`);
+            console.log('✅ [FilmFetcher] Microservicio respondió:', response.data);
             return true;
         } catch (error) {
-            console.error('❌ [FilmFetcher] Microservicio de scraping no disponible:', {
+            console.error('❌ [FilmFetcher] Microservicio no disponible:', {
                 error: error.message,
-                url: SCRAPING_SERVICE_URL
+                url: SCRAPING_SERVICE_URL,
+                config: error.config,
+                response: error.response?.data
             });
             return false;
         }
     }
 
+    async ejecutarScrapingInmediato(siteId) {
+        try {
+            console.log(`🔄 [FilmFetcher] Ejecutando scraping inmediato para sitio ${siteId}`);
+            const site = await Site.findById(siteId);
+            
+            if (!site) {
+                throw new Error('Sitio no encontrado');
+            }
+
+            console.log(`📌 [FilmFetcher] Iniciando scraping para ${site.nombre}`);
+            const resultado = await this.scrapeSite(site);
+            
+            console.log(`✅ [FilmFetcher] Scraping inmediato completado para ${site.nombre}`);
+            return resultado;
+        } catch (error) {
+            console.error('❌ [FilmFetcher] Error en scraping inmediato:', {
+                siteId,
+                error: error.message,
+                stack: error.stack
+            });
+            throw error;
+        }
+    }
 
     async scrapeSite(site) {
         console.log(`\n🎬 [FilmFetcher] INICIO SCRAPING: ${site.nombre}`);
@@ -61,25 +86,31 @@ class ScrapingService {
                 }
             );
 
-            console.log('📊 [FilmFetcher] Respuesta del microservicio:', {
+            console.log('📦 [FilmFetcher] Respuesta del microservicio:', {
                 status: scrapeResponse.status,
                 success: scrapeResponse.data?.success,
-                contentLength: scrapeResponse.data?.data?.length || 0
+                dataLength: scrapeResponse.data?.data?.length || 0,
+                error: scrapeResponse.data?.error
             });
 
-            if (!scrapeResponse.data?.success || !scrapeResponse.data?.data) {
-                throw new Error(scrapeResponse.data?.error || 'No se recibió contenido HTML del servicio');
+            if (!scrapeResponse.data?.success) {
+                causaFallo = scrapeResponse.data?.error || 'Respuesta del microservicio no exitosa';
+                throw new Error(causaFallo);
+            }
+
+            if (!scrapeResponse.data?.data) {
+                causaFallo = 'No se recibió contenido HTML del microservicio';
+                throw new Error(causaFallo);
             }
 
             const htmlContent = scrapeResponse.data.data;
-            console.log('🧠 [FilmFetcher] Enviando contenido a OpenAI para análisis...');
+            console.log('📝 [FilmFetcher] HTML recibido, longitud:', htmlContent.length);
+
+            console.log('🧠 [FilmFetcher] Procesando con OpenAI...');
             const openAIResponse = await this.openAIScrape(site, htmlContent);
             respuestaOpenAI = JSON.stringify(openAIResponse);
             
-            console.log('📝 [FilmFetcher] Respuesta de OpenAI:', {
-                longitud: respuestaOpenAI.length,
-                proyeccionesEncontradas: openAIResponse.proyecciones?.length || 0
-            });
+            console.log('🎯 [FilmFetcher] Respuesta de OpenAI recibida');
 
             let proyecciones = openAIResponse.proyecciones || openAIResponse.Proyecciones;
             if (!Array.isArray(proyecciones)) {
@@ -88,19 +119,18 @@ class ScrapingService {
             }
 
             const projections = this.processAIResponse(proyecciones, site._id);
-            console.log(`📌 [FilmFetcher] Proyecciones procesadas: ${projections.length}`);
-
+            
             if (projections.length > 0) {
                 await this.insertProjections(projections, site);
                 console.log(`✅ [FilmFetcher] ${projections.length} proyecciones guardadas para ${site.nombre}`);
                 await this.updateSiteAndHistory(site._id, 'exitoso', null, projections.length, respuestaOpenAI);
+                return { success: true, proyecciones: projections };
             } else {
                 causaFallo = 'No se encontraron proyecciones válidas';
                 console.log('⚠️ [FilmFetcher]', causaFallo);
                 await this.updateSiteAndHistory(site._id, 'exitoso', causaFallo, 0, respuestaOpenAI);
+                return { success: true, proyecciones: [] };
             }
-
-            return { success: true, proyecciones: projections };
 
         } catch (error) {
             console.error('❌ [FilmFetcher] Error en scraping:', {
@@ -112,50 +142,49 @@ class ScrapingService {
             await this.updateSiteAndHistory(site._id, 'fallido', error.message, 0, respuestaOpenAI, causaFallo);
             throw error;
         }
-        console.log(`\n🎬 [FilmFetcher] FIN SCRAPING: ${site.nombre}\n`);
     }
 
     async openAIScrape(site, extractedInfo) {
-      console.log(`[Scraping Service] Iniciando procesamiento OpenAI para ${site.nombre}`);
-      const prompt = `Analiza este contenido HTML y extrae las proyecciones. DEVUELVE SOLO JSON con este formato:
-      {
-        "proyecciones": [
-          {
-            "nombre": "string",
-            "fechaHora": "2024-01-01T00:00:00.000Z",
-            "director": "string",
-            "genero": "string",
-            "duracion": 0,
-            "sala": "string",
-            "precio": 0
-          }
-        ]
-      }
-      
-      Reglas:
-      - Usa "No especificado" para texto faltante
-      - Usa 0 para números faltantes
-      - Usa 2024 si no hay año
-      - Crea entrada separada por cada horario
-      - SIN texto adicional, SOLO JSON válido`;
-  
-      try {
-        console.log(`[Scraping Service] Enviando solicitud a OpenAI (${extractedInfo.length} caracteres)`);
-        const response = await this.openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
+        console.log(`[Scraping Service] Iniciando procesamiento OpenAI para ${site.nombre}`);
+        const prompt = `Analiza este contenido HTML y extrae las proyecciones. DEVUELVE SOLO JSON con este formato:
+        {
+          "proyecciones": [
             {
-              role: "system",
-              content: "Eres un experto en extraer información de cine de texto HTML. Tu tarea es analizar el texto proporcionado y extraer información sobre las proyecciones de películas."
-            },
-            {
-              role: "user",
-              content: prompt + "\n\nContenido:\n" + extractedInfo
+              "nombre": "string",
+              "fechaHora": "2024-01-01T00:00:00.000Z",
+              "director": "string",
+              "genero": "string",
+              "duracion": 0,
+              "sala": "string",
+              "precio": 0
             }
-          ],
-          temperature: 0.2,
-          max_tokens: 8000
-        });
+          ]
+        }
+        
+        Reglas:
+        - Usa "No especificado" para texto faltante
+        - Usa 0 para números faltantes
+        - Usa 2024 si no hay año
+        - Crea entrada separada por cada horario
+        - SIN texto adicional, SOLO JSON válido`;
+
+        try {
+            console.log(`[Scraping Service] Enviando solicitud a OpenAI (${extractedInfo.length} caracteres)`);
+            const response = await this.openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                    {
+                        role: "system",
+                        content: "Eres un experto en extraer información de cine de texto HTML. Tu tarea es analizar el texto proporcionado y extraer información sobre las proyecciones de películas."
+                    },
+                    {
+                        role: "user",
+                        content: prompt + "\n\nContenido:\n" + extractedInfo
+                    }
+                ],
+                temperature: 0.2,
+                max_tokens: 8000
+            });
 
             let content = response.choices[0]?.message?.content.trim() || "{}";
             content = content.replace(/```json\n?|\n?```/g, '').trim();
