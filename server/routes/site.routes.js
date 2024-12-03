@@ -41,74 +41,92 @@ router.get('/scraping-history', async (req, res) => {
   }
 });
 
-// Agregar nuevo sitio
 router.post('/add', async (req, res) => {
   try {
-    console.log('Datos recibidos para nuevo sitio:', req.body);
-    const { 
-      nombre, 
-      url, 
-      direccion, 
-      tipo, 
-      tipoCarga, 
-      tipoFrecuencia,
-      configuraciones,
-      tags,
-      prioridad,
-      fechaInicio,
-      fechaFin,
-      usuarioCreador 
-    } = req.body;
+      console.log('Datos recibidos para nuevo sitio:', req.body);
+      const { 
+          nombre, 
+          url, 
+          direccion, 
+          tipo, 
+          tipoCarga, 
+          tipoFrecuencia,
+          configuraciones,
+          tags,
+          prioridad,
+          fechaInicio,
+          fechaFin,
+          usuarioCreador,
+          scrapingInmediato
+      } = req.body;
 
-    if (!nombre || !url || !tipoCarga || !usuarioCreador) {
-      return res.status(400).json({ message: 'Faltan campos requeridos' });
-    }
+      if (!nombre || !url || !tipoCarga || !usuarioCreador) {
+          return res.status(400).json({ message: 'Faltan campos requeridos' });
+      }
 
-    if (tipoCarga === 'scraping' && !tipoFrecuencia) {
-      return res.status(400).json({ message: 'La frecuencia de actualización es requerida para sitios de scraping' });
-    }
+      if (tipoCarga === 'scraping' && !tipoFrecuencia) {
+          return res.status(400).json({ message: 'La frecuencia de actualización es requerida para sitios de scraping' });
+      }
 
-    const newSite = new Site({
-      nombre,
-      url,
-      direccion,
-      tipo,
-      tipoCarga,
-      frecuenciaActualizacion: tipoFrecuencia,
-      usuarioCreador,
-      habilitado: true,
-      activoParaScraping: tipoCarga === 'scraping'
-    });
-
-    const savedSite = await newSite.save();
-
-    if (tipoCarga === 'scraping' && configuraciones?.length > 0) {
-      // Desactivar cualquier schedule existente para este sitio
-      await ScrapingSchedule.updateMany(
-        { sitioId: savedSite._id },
-        { activo: false }
-      );
-
-      const newSchedule = new ScrapingSchedule({
-        sitioId: savedSite._id,
-        tipoFrecuencia,
-        configuraciones,
-        tags,
-        prioridad,
-        fechaInicio,
-        fechaFin
+      const newSite = new Site({
+          nombre,
+          url,
+          direccion,
+          tipo,
+          tipoCarga,
+          frecuenciaActualizacion: tipoFrecuencia,
+          usuarioCreador,
+          habilitado: true,
+          activoParaScraping: tipoCarga === 'scraping'
       });
 
-      // Usar el método del modelo para calcular la próxima ejecución
-      newSchedule.proximaEjecucion = newSchedule.calcularProximaEjecucion();
-      await newSchedule.save();
-    }
+      const savedSite = await newSite.save();
 
-    console.log('Sitio guardado exitosamente:', savedSite._id);
-    res.status(201).json(savedSite);
+      if (tipoCarga === 'scraping' && configuraciones?.length > 0) {
+          await ScrapingSchedule.updateMany(
+              { sitioId: savedSite._id },
+              { activo: false }
+          );
+
+          const newSchedule = new ScrapingSchedule({
+              sitioId: savedSite._id,
+              tipoFrecuencia,
+              configuraciones,
+              tags,
+              prioridad,
+              fechaInicio,
+              fechaFin,
+              proximaEjecucion: new Date() // Establecemos la próxima ejecución como ahora
+          });
+
+          // El pre-save hook calculará la próxima ejecución real basada en la configuración
+          console.log('Creando nuevo schedule con configuración:', {
+              tipoFrecuencia,
+              configuraciones: configuraciones.map(c => ({
+                  hora: c.hora,
+                  diasSemana: c.diasSemana,
+                  diasMes: c.diasMes
+              }))
+          });
+
+          await newSchedule.save();
+
+          if (scrapingInmediato) {
+              console.log(`Iniciando scraping inmediato para el sitio ${savedSite.nombre}`);
+              try {
+                  await ScrapingService.ejecutarScrapingInmediato(savedSite._id);
+                  console.log(`Scraping inmediato completado para ${savedSite.nombre}`);
+              } catch (error) {
+                  console.error(`Error en scraping inmediato para ${savedSite.nombre}:`, error);
+                  // No lanzamos el error para que no afecte la creación del sitio
+              }
+          }
+      }
+
+      res.status(201).json(savedSite);
   } catch (error) {
-    console.error('Error al guardar el sitio:', error);
-    res.status(400).json({ message: error.message });
+      console.error('Error al guardar el sitio:', error);
+      res.status(400).json({ message: error.message });
   }
 });
 
