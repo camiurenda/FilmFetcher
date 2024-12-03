@@ -113,28 +113,6 @@ const ViewSite = () => {
       key: 'direccion',
     },
     {
-      title: 'Tipo',
-      dataIndex: 'tipo',
-      key: 'tipo',
-      render: (tipo) => {
-        if (!tipo) return <Tag color="default">No especificado</Tag>;
-        
-        let color = 'geekblue';
-        if (tipo === 'cine') {
-          color = 'purple';
-        } else if (tipo === 'teatro') {
-          color = 'orange';
-        } else if (tipo === 'museo') {
-          color = 'cyan';
-        }
-        return (
-          <Tag color={color} key={tipo}>
-            {tipo.toUpperCase()}
-          </Tag>
-        );
-      },
-    },
-    {
       title: 'Tipo de Carga',
       dataIndex: 'tipoCarga',
       key: 'tipoCarga',
