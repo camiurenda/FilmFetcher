@@ -1,215 +1,274 @@
+// FilmFetcher/server/services/schedule.service.js
+
+const moment = require('moment-timezone');
 const ScrapingSchedule = require('../models/scrapingSchedule.model');
 const Site = require('../models/site.model');
-const ScrapingHistory = require('../models/scrapingHistory.model');
-const axios = require('axios');
-const OpenAI = require('openai');
-require('dotenv').config();
 
 class ScheduleService {
     constructor() {
         this.scheduledJobs = new Map();
-        this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
         this.isInitialized = false;
+        this.timezone = 'America/Argentina/Buenos_Aires';
+        this.watchInterval = null;
     }
 
     async inicializar() {
-        if (this.isInitialized) return;
-
         try {
-            console.log('Inicializando servicio de scheduling...');
+            console.log('[Schedule] Inicializando servicio...');
             
-            // Limpiar trabajos programados existentes
             this.scheduledJobs.forEach(job => clearTimeout(job.timer));
             this.scheduledJobs.clear();
 
-            // Obtener todos los schedules activos
             const schedules = await ScrapingSchedule.find({ activo: true }).populate('sitioId');
-            console.log(`Encontrados ${schedules.length} schedules activos`);
+            console.log(`[Schedule] Encontrados ${schedules.length} schedules activos`);
 
-            // Programar cada schedule
             for (const schedule of schedules) {
                 if (!schedule.sitioId) {
-                    console.log(`Schedule ${schedule._id} sin sitio asociado, ignorando...`);
+                    console.log(`[Schedule] Schedule ${schedule._id} sin sitio asociado, ignorando...`);
                     continue;
                 }
                 await this.programarScraping(schedule);
             }
 
+            if (!this.watchInterval) {
+                this.watchInterval = setInterval(async () => {
+                    await this.verificarCambiosSchedules();
+                }, 60000);
+            }
+
             this.isInitialized = true;
-            console.log('Servicio de scheduling inicializado correctamente');
+            console.log('[Schedule] Servicio inicializado correctamente');
         } catch (error) {
-            console.error('Error al inicializar el servicio de scheduling:', error);
+            console.error('[Schedule] Error al inicializar:', error);
             throw error;
         }
     }
 
+    async verificarCambiosSchedules() {
+        try {
+            console.log('[Schedule] Verificando cambios en schedules...');
+            const schedulesActuales = await ScrapingSchedule.find({ activo: true }).populate('sitioId');
+            
+            for (const schedule of schedulesActuales) {
+                const jobActual = this.scheduledJobs.get(schedule._id.toString());
+                
+                if (!jobActual) {
+                    console.log(`[Schedule] Nuevo schedule detectado: ${schedule._id}`);
+                    await this.programarScraping(schedule);
+                    continue;
+                }
+
+                if (this.hayCambiosEnConfiguracion(schedule, jobActual.config)) {
+                    console.log(`[Schedule] Cambios detectados en schedule ${schedule._id}`);
+                    await this.programarScraping(schedule);
+                }
+            }
+
+            for (const [id, job] of this.scheduledJobs) {
+                const scheduleExiste = schedulesActuales.find(s => s._id.toString() === id);
+                if (!scheduleExiste) {
+                    console.log(`[Schedule] Eliminando schedule inactivo: ${id}`);
+                    clearTimeout(job.timer);
+                    this.scheduledJobs.delete(id);
+                }
+            }
+        } catch (error) {
+            console.error('[Schedule] Error al verificar cambios:', error);
+        }
+    }
+
+    hayCambiosEnConfiguracion(scheduleNuevo, configAnterior) {
+        if (!configAnterior) return true;
+
+        const cambios = 
+            scheduleNuevo.tipoFrecuencia !== configAnterior.tipoFrecuencia ||
+            JSON.stringify(scheduleNuevo.configuraciones) !== JSON.stringify(configAnterior.configuraciones) ||
+            scheduleNuevo.activo !== configAnterior.activo;
+
+        return cambios;
+    }
+
     async programarScraping(schedule) {
         try {
+            console.log(`[Schedule] Programando scraping para sitio ${schedule.sitioId?.nombre || schedule._id}`);
+            
             if (!schedule.sitioId) {
                 throw new Error('Schedule sin sitio asociado');
             }
 
-            // Cancelar job existente si existe
             if (this.scheduledJobs.has(schedule._id.toString())) {
                 clearTimeout(this.scheduledJobs.get(schedule._id.toString()).timer);
                 this.scheduledJobs.delete(schedule._id.toString());
+                console.log(`[Schedule] Job anterior cancelado para ${schedule._id}`);
             }
 
             const ahora = new Date();
-            const proximaEjecucion = schedule.calcularProximaEjecucion(ahora);
-            const tiempoHastaEjecucion = proximaEjecucion.getTime() - ahora.getTime();
+            const proximaEjecucion = await this.calcularProximaEjecucion(schedule, ahora);
+            
+            if (!proximaEjecucion) {
+                console.log(`[Schedule] No se pudo calcular próxima ejecución para ${schedule._id}`);
+                return false;
+            }
 
-            if (tiempoHastaEjecucion <= 0) {
-                console.log(`Schedule ${schedule._id} con tiempo negativo, recalculando...`);
-                schedule.proximaEjecucion = schedule.calcularProximaEjecucion(new Date());
+            const tiempoHastaEjecucion = proximaEjecucion.getTime() - ahora.getTime();
+            
+            console.log(`[Schedule] Nueva programación:`, {
+                sitio: schedule.sitioId.nombre,
+                ahora: ahora.toLocaleString(),
+                proximaEjecucion: proximaEjecucion.toLocaleString(),
+                tiempoHastaEjecucion: Math.round(tiempoHastaEjecucion / 1000 / 60) + ' minutos'
+            });
+
+            if (tiempoHastaEjecucion <= 1) {
+                console.log(`[Schedule] Tiempo negativo para ${schedule._id}, ejecutando inmediatamente...`);
+                await this.ejecutarScraping(schedule);
+                schedule.proximaEjecucion = await this.calcularProximaEjecucion(schedule, new Date());
                 await schedule.save();
                 return this.programarScraping(schedule);
             }
 
-            console.log(`Programando scraping para ${schedule.sitioId.nombre}:`, {
-                proximaEjecucion: proximaEjecucion.toLocaleString(),
-                tiempoRestante: Math.round(tiempoHastaEjecucion / 1000 / 60) + ' minutos'
-            });
-
             const timer = setTimeout(async () => {
-                await this.ejecutarScraping(schedule);
+                try {
+                    console.log(`[Schedule] ⏰ Ejecutando scraping programado para ${schedule.sitioId.nombre}`);
+                    await this.ejecutarScraping(schedule);
+                    
+                    await this.programarScraping(schedule);
+                } catch (error) {
+                    console.error(`[Schedule] Error en ejecución de ${schedule.sitioId.nombre}:`, error);
+                    
+                    schedule.intentosFallidos = (schedule.intentosFallidos || 0) + 1;
+                    schedule.ultimoError = {
+                        mensaje: error.message,
+                        fecha: new Date(),
+                        intentos: schedule.intentosFallidos
+                    };
+                    await schedule.save();
+
+                    setTimeout(() => this.programarScraping(schedule), 5 * 60 * 1000);
+                }
             }, tiempoHastaEjecucion);
 
             this.scheduledJobs.set(schedule._id.toString(), {
                 timer,
-                proximaEjecucion
+                proximaEjecucion,
+                sitioId: schedule.sitioId._id,
+                config: {
+                    tipoFrecuencia: schedule.tipoFrecuencia,
+                    configuraciones: JSON.parse(JSON.stringify(schedule.configuraciones)),
+                    activo: schedule.activo
+                }
             });
 
-            // Actualizar próxima ejecución en la base de datos
             schedule.proximaEjecucion = proximaEjecucion;
             await schedule.save();
 
             return true;
         } catch (error) {
-            console.error(`Error al programar scraping para schedule ${schedule._id}:`, error);
+            console.error(`[Schedule] Error al programar scraping para ${schedule._id}:`, error);
             return false;
         }
     }
 
     async ejecutarScraping(schedule) {
-        console.log(`Iniciando scraping para ${schedule.sitioId.nombre}`);
-        
         try {
-            const resultado = await this.realizarScraping(schedule.sitioId);
+            console.log(`[Schedule] Iniciando scraping para ${schedule.sitioId.nombre}`);
             
-            // Actualizar última ejecución y resetear intentos fallidos
+            const ScrapingService = require('./scraping.service');
+            const resultado = await ScrapingService.scrapeSite(schedule.sitioId);
+            
             schedule.ultimaEjecucion = new Date();
             schedule.intentosFallidos = 0;
             schedule.ultimoError = null;
+            await schedule.save();
 
-            // Registrar en historial
-            await ScrapingHistory.create({
-                siteId: schedule.sitioId._id,
-                estado: 'exitoso',
-                cantidadProyecciones: resultado.proyecciones?.length || 0,
-                fechaScraping: new Date()
-            });
-
-            console.log(`Scraping exitoso para ${schedule.sitioId.nombre}`);
+            console.log(`[Schedule] Scraping completado para ${schedule.sitioId.nombre}`);
+            return resultado;
         } catch (error) {
-            console.error(`Error en scraping para ${schedule.sitioId.nombre}:`, error);
+            console.error(`[Schedule] Error en scraping:`, error);
+            throw error;
+        }
+    }
+
+    async calcularProximaEjecucion(schedule, desde = new Date()) {
+        try {
+            console.log(`[Schedule] Calculando próxima ejecución para ${schedule._id}`);
             
-            // Actualizar contador de intentos fallidos
-            schedule.intentosFallidos = (schedule.intentosFallidos || 0) + 1;
-            schedule.ultimoError = {
-                mensaje: error.message,
-                fecha: new Date()
-            };
-
-            // Registrar en historial
-            await ScrapingHistory.create({
-                siteId: schedule.sitioId._id,
-                estado: 'fallido',
-                mensajeError: error.message,
-                fechaScraping: new Date()
-            });
-        }
-
-        // Guardar cambios y programar siguiente ejecución
-        await schedule.save();
-        await this.programarScraping(schedule);
-    }
-
-    async realizarScraping(sitio) {
-        // Aquí va la lógica existente de scraping
-        // Por ahora es un placeholder
-        return { proyecciones: [] };
-    }
-
-    async agregarSchedule(sitioId, configuracion) {
-        try {
-            const sitio = await Site.findById(sitioId);
-            if (!sitio) {
-                throw new Error('Sitio no encontrado');
+            if (!schedule.sitioId) {
+                throw new Error('Schedule sin sitio asociado');
             }
 
-            // Crear nuevo schedule
-            const schedule = new ScrapingSchedule({
-                sitioId,
-                tipoFrecuencia: configuracion.tipoFrecuencia,
-                configuracion: {
-                    hora: configuracion.hora,
-                    diasSemana: configuracion.diasSemana,
-                    diaMes: configuracion.diaMes
-                },
-                activo: true
-            });
+            const ahora = moment(desde).tz(this.timezone);
+            console.log(`[Schedule] Hora actual: ${ahora.format('YYYY-MM-DD HH:mm:ss')}`);
 
-            await schedule.save();
-            await this.programarScraping(schedule);
+            if (schedule.configuraciones && schedule.configuraciones.length > 0) {
+                for (const config of schedule.configuraciones) {
+                    const [horas, minutos] = config.hora.split(':');
+                    let fecha = moment(ahora)
+                        .tz(this.timezone)
+                        .hours(parseInt(horas))
+                        .minutes(parseInt(minutos))
+                        .seconds(0)
+                        .milliseconds(0);
 
-            return schedule;
+                    console.log(`[Schedule] Evaluando hora configurada: ${fecha.format('YYYY-MM-DD HH:mm:ss')}`);
+
+                    if (fecha.isSameOrBefore(ahora)) {
+                        fecha.add(1, 'day');
+                        console.log(`[Schedule] Fecha ajustada al día siguiente: ${fecha.format('YYYY-MM-DD HH:mm:ss')}`);
+                    }
+
+                    switch (schedule.tipoFrecuencia) {
+                        case 'semanal':
+                            if (config.diasSemana && !config.diasSemana.includes(fecha.day())) {
+                                let encontrado = false;
+                                let intentos = 0;
+                                while (!encontrado && intentos < 7) {
+                                    fecha.add(1, 'day');
+                                    if (config.diasSemana.includes(fecha.day())) {
+                                        encontrado = true;
+                                    }
+                                    intentos++;
+                                }
+                                if (!encontrado) continue;
+                            }
+                            break;
+
+                        case 'mensual-dia':
+                            if (config.diasMes && !config.diasMes.includes(fecha.date())) {
+                                let diaEncontrado = false;
+                                for (const dia of config.diasMes.sort((a, b) => a - b)) {
+                                    const fechaPrueba = fecha.clone().date(dia);
+                                    if (fechaPrueba.isAfter(ahora)) {
+                                        fecha = fechaPrueba;
+                                        diaEncontrado = true;
+                                        break;
+                                    }
+                                }
+                                if (!diaEncontrado) {
+                                    fecha.add(1, 'month').date(config.diasMes[0]);
+                                }
+                            }
+                            break;
+
+                        case 'mensual-posicion':
+                            // Implementar lógica para mensual-posicion si es necesario
+                            break;
+
+                        case 'test':
+                            fecha = moment(ahora).add(1, 'minute');
+                            break;
+                    }
+
+                    console.log(`[Schedule] Próxima ejecución calculada: ${fecha.format('YYYY-MM-DD HH:mm:ss')}`);
+                    return fecha.toDate();
+                }
+            }
+
+            console.log(`[Schedule] No se encontró configuración válida`);
+            return null;
         } catch (error) {
-            console.error('Error al agregar schedule:', error);
-            throw error;
-        }
-    }
-
-    async pausarSchedule(scheduleId) {
-        try {
-            const schedule = await ScrapingSchedule.findById(scheduleId);
-            if (!schedule) {
-                throw new Error('Schedule no encontrado');
-            }
-
-            schedule.activo = false;
-            await schedule.save();
-
-            if (this.scheduledJobs.has(scheduleId.toString())) {
-                clearTimeout(this.scheduledJobs.get(scheduleId.toString()).timer);
-                this.scheduledJobs.delete(scheduleId.toString());
-            }
-
-            return schedule;
-        } catch (error) {
-            console.error('Error al pausar schedule:', error);
-            throw error;
-        }
-    }
-
-    async reanudarSchedule(scheduleId) {
-        try {
-            const schedule = await ScrapingSchedule.findById(scheduleId).populate('sitioId');
-            if (!schedule) {
-                throw new Error('Schedule no encontrado');
-            }
-
-            schedule.activo = true;
-            schedule.intentosFallidos = 0;
-            schedule.ultimoError = null;
-            await schedule.save();
-
-            await this.programarScraping(schedule);
-
-            return schedule;
-        } catch (error) {
-            console.error('Error al reanudar schedule:', error);
-            throw error;
+            console.error('[Schedule] Error calculando próxima ejecución:', error);
+            return null;
         }
     }
 
@@ -230,7 +289,7 @@ class ScheduleService {
                 ultimoError: schedule.ultimoError
             }));
         } catch (error) {
-            console.error('Error al obtener estado de schedules:', error);
+            console.error('[Schedule] Error al obtener estado:', error);
             throw error;
         }
     }

@@ -6,10 +6,10 @@ const { auth, requiresAuth } = require('express-openid-connect');
 const siteRoutes = require('../routes/site.routes');
 const projectionRoutes = require('../routes/projection.routes');
 const ScrapingService = require('../services/scraping.service'); 
+const ScheduleService = require('../services/schedule.service'); // Importar ScheduleService
 const scrapingScheduleRoutes = require('../routes/scrapingSchedule.routes');
 const scrapingHistoryRoutes = require('../routes/scrapingHistory.routes');
 const statsRoutes = require('../routes/stats.routes');
-
 
 require('dotenv').config();
 
@@ -100,6 +100,14 @@ const initializeServices = async () => {
     console.log('Conectado exitosamente a MongoDB');
     await ScrapingService.initializeJobs();
     console.log('Trabajos de scraping inicializados');
+    await ScheduleService.inicializar(); // Inicializar ScheduleService
+    console.log('Servicio de schedule inicializado');
+
+    // Revisar periódicamente los cambios en los schedules
+    setInterval(async () => {
+      console.log('Revisando cambios en los schedules...');
+      await ScheduleService.inicializar();
+    }, 60 * 1000); // Cada 1 minuto
   } catch (err) {
     console.error('Error durante la inicialización:', err);
   }
