@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Space, Typography, Button, Modal, message } from 'antd';
+import { Table, Tag, Space, Typography, Button, Modal, message, Row, Col, Select, Input } from 'antd';
+import { SearchOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import { useNavigate } from 'react-router-dom';
@@ -8,24 +9,30 @@ import API_URL from '../../config/api';
 import SiteModal from './siteModal';
 
 const { Title } = Typography;
+const { Search } = Input;
 const { confirm } = Modal;
 
 const ViewSite = () => {
   const [sites, setSites] = useState([]);
+  const [filteredSites, setFilteredSites] = useState([]);
   const [editingSite, setEditingSite] = useState(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState('add');
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [searchText, setSearchText] = useState('');
+  const [filterType, setFilterType] = useState('nombre');
 
   const fetchSites = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/sites`);
       setSites(Array.isArray(response.data) ? response.data : []);
+      setFilteredSites(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error al obtener sitios:', error);
       message.error('Error al cargar los sitios');
       setSites([]);
+      setFilteredSites([]);
     }
   };
 
@@ -33,10 +40,32 @@ const ViewSite = () => {
     fetchSites();
   }, []);
 
+  const handleSearch = (value) => {
+    setSearchText(value);
+    if (!value) {
+      setFilteredSites(sites);
+      return;
+    }
+
+    const searchLower = value.toLowerCase();
+    const filtered = sites.filter(site => {
+      const fieldValue = String(site[filterType] || '').toLowerCase();
+      return fieldValue.includes(searchLower);
+    });
+    
+    setFilteredSites(filtered);
+  };
+
+  const handleFilterTypeChange = (value) => {
+    setFilterType(value);
+    setSearchText('');
+    setFilteredSites(sites);
+  };
+
   const handleDisable = async (id) => {
     confirm({
       title: '¿Estás seguro de que quieres deshabilitar este sitio?',
-      content: 'Esta acción ocultará el sitio de la lista principal y lo desactivará para el scraping.',
+      content: 'Esta acción ocultará el sitio de la lista principal.',
       onOk: async () => {
         try {
           await axios.put(`${API_URL}/api/sites/disable/${id}`);
@@ -175,6 +204,32 @@ const ViewSite = () => {
       <div style={{ padding: '24px', background: '#141414', borderRadius: '8px', overflow: 'auto' }}>
         <Title level={2} style={{ color: '#fff', marginBottom: '24px' }}>Ver Sitios</Title>
         
+        <div style={{ marginBottom: '20px', maxWidth: '500px' }}>
+          <Row gutter={[8, 8]}>
+            <Col span={8}>
+              <Select
+                value={filterType}
+                onChange={handleFilterTypeChange}
+                style={{ width: '100%' }}
+              >
+                <Select.Option value="nombre">Nombre</Select.Option>
+                <Select.Option value="direccion">Dirección</Select.Option>
+                <Select.Option value="tipoCarga">Tipo de Carga</Select.Option>
+                <Select.Option value="frecuenciaActualizacion">Frecuencia</Select.Option>
+              </Select>
+            </Col>
+            <Col span={16}>
+              <Search
+                placeholder={`Buscar por ${filterType}`}
+                value={searchText}
+                onChange={e => handleSearch(e.target.value)}
+                style={{ width: '100%' }}
+                allowClear
+              />
+            </Col>
+          </Row>
+        </div>
+
         <div style={{ position: 'relative' }}>
           <Button 
             type="primary" 
@@ -191,7 +246,7 @@ const ViewSite = () => {
           
           <Table 
             columns={columns} 
-            dataSource={sites} 
+            dataSource={filteredSites} 
             rowKey="_id"
             scroll={{ x: 'max-content' }}
             pagination={{ 

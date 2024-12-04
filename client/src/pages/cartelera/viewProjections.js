@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Table, Space, Typography, Button, Modal, message, Form, Input, DatePicker, InputNumber, Select, Flex } from 'antd';
-import { PoweroffOutlined } from '@ant-design/icons';
+import { Table, Space, Typography, Button, Modal, message, Form, Input, DatePicker, InputNumber, Select, Flex, Row, Col } from 'antd';
+import { PoweroffOutlined, SearchOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import moment from 'moment';
@@ -9,9 +9,11 @@ import API_URL from '../../config/api';
 
 const { Title } = Typography;
 const { confirm } = Modal;
+const { Search } = Input;
 
 const ViewProjections = () => {
   const [projections, setProjections] = useState([]);
+  const [filteredProjections, setFilteredProjections] = useState([]);
   const [editingProjection, setEditingProjection] = useState(null);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
@@ -23,12 +25,15 @@ const ViewProjections = () => {
   const [mostrarAnteriores, setMostrarAnteriores] = useState(false);
   const [scrapedProjections, setScrapedProjections] = useState([]);
   const [isResultModalVisible, setIsResultModalVisible] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [filterType, setFilterType] = useState('nombrePelicula');
 
   const fetchProjections = useCallback(async () => {
     try {
       const endpoint = mostrarAnteriores ? '/api/projections/proyecciones-anteriores' : '/api/projections/proyecciones-actuales';
       const response = await axios.get(`${API_URL}${endpoint}`);
       setProjections(response.data);
+      setFilteredProjections(response.data);
     } catch (error) {
       console.error('Error fetching projections:', error);
       message.error('Error al cargar las proyecciones');
@@ -39,6 +44,28 @@ const ViewProjections = () => {
     fetchProjections();
     fetchSitiosManual();
   }, [fetchProjections]);
+
+  const handleSearch = (value) => {
+    setSearchText(value);
+    if (!value) {
+      setFilteredProjections(projections);
+      return;
+    }
+
+    const searchLower = value.toLowerCase();
+    const filtered = projections.filter(projection => {
+      const fieldValue = String(projection[filterType] || '').toLowerCase();
+      return fieldValue.includes(searchLower);
+    });
+    
+    setFilteredProjections(filtered);
+  };
+
+  const handleFilterTypeChange = (value) => {
+    setFilterType(value);
+    setSearchText('');
+    setFilteredProjections(projections);
+  };
 
   const handleDisable = async (id) => {
     confirm({
@@ -117,7 +144,7 @@ const ViewProjections = () => {
       });
       message.success('Proyección actualizada correctamente');
       setIsEditModalVisible(false);
-      fetchProjections(); // Actualizar la grilla después de editar
+      fetchProjections();
     } catch (error) {
       console.error('Error updating projection:', error);
       message.error('Error al actualizar la proyección');
@@ -199,20 +226,15 @@ const ViewProjections = () => {
       key: 'director',
     },
     {
-      title: 'Género',
-      dataIndex: 'genero',
-      key: 'genero',
-    },
-    {
       title: 'Duración',
       dataIndex: 'duracion',
       key: 'duracion',
       render: (duracion) => `${duracion} min`,
     },
     {
-      title: 'Sala',
-      dataIndex: 'sala',
-      key: 'sala',
+      title: 'Cine',
+      dataIndex: 'nombreCine',
+      key: 'nombreCine',
     },
     {
       title: 'Precio',
@@ -251,32 +273,70 @@ const ViewProjections = () => {
     <AuthWrapper>
       <div style={{ padding: '24px', background: '#141414', borderRadius: '8px', overflow: 'auto' }}>
         <Title level={2} style={{ color: '#fff', marginBottom: '24px' }}>Cartelera</Title>
+        
         <div style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          marginBottom: '20px',
-          gap: '10px'
-        }}>
-          <Button
-            type="primary"
-            onClick={() => setMostrarAnteriores(!mostrarAnteriores)}
-          >
-            {mostrarAnteriores ? 'Ver Proyecciones Actuales' : 'Ver Proyecciones Anteriores'}
-          </Button>
-          <Button type="primary" onClick={showAddModal}>
-            Agregar
-          </Button>
-          <Button type="primary" onClick={showManualLoadModal}>
-            Carga Manual desde Archivo
-          </Button>
-          <Button type="primary" onClick={showExportModal}>
-            Exportar a CSV
-          </Button>
-        </div>
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: '20px',
+  gap: '16px'
+}}>
+  {/* Contenedor del buscador */}
+  <div style={{ flex: '1' }}>
+    <Row gutter={[16, 16]}>
+      <Col xs={24} sm={8} md={6}>
+        <Select
+          value={filterType}
+          onChange={handleFilterTypeChange}
+          style={{ width: '100%' }}
+        >
+          <Select.Option value="nombrePelicula">Película</Select.Option>
+          <Select.Option value="genero">Género</Select.Option>
+          <Select.Option value="director">Director</Select.Option>
+          <Select.Option value="nombreCine">Cine</Select.Option>
+        </Select>
+      </Col>
+      <Col xs={24} sm={16} md={18}>
+        <Search
+          placeholder={`Buscar por ${filterType === 'nombrePelicula' ? 'película' : 
+                      filterType === 'genero' ? 'género' : 
+                      filterType === 'director' ? 'director' : 'cine'}`}
+          value={searchText}
+          onChange={e => handleSearch(e.target.value)}
+          style={{ width: '100%' }}
+          allowClear
+        />
+      </Col>
+    </Row>
+  </div>
+
+  {/* Contenedor de botones */}
+  <div style={{
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'nowrap'
+  }}>
+    <Button
+      type="primary"
+      onClick={() => setMostrarAnteriores(!mostrarAnteriores)}
+    >
+      {mostrarAnteriores ? 'Ver Proyecciones Actuales' : 'Ver Proyecciones Anteriores'}
+    </Button>
+    <Button type="primary" onClick={showAddModal}>
+      Agregar
+    </Button>
+    <Button type="primary" onClick={showManualLoadModal}>
+      Carga Manual desde Archivo
+    </Button>
+    <Button type="primary" onClick={showExportModal}>
+      Exportar a CSV
+    </Button>
+  </div>
+</div>
 
         <Table
           columns={columns}
-          dataSource={projections}
+          dataSource={filteredProjections}
           rowKey="_id"
           scroll={{ x: 'max-content' }}
           pagination={{
@@ -310,9 +370,6 @@ const ViewProjections = () => {
             </Form.Item>
             <Form.Item name="duracion" label="Duración (minutos)">
               <InputNumber min={1} />
-            </Form.Item>
-            <Form.Item name="sala" label="Sala" rules={[{ required: true }]}>
-              <Input />
             </Form.Item>
             <Form.Item name="precio" label="Precio">
               <InputNumber min={0} step={0.01} />
