@@ -166,7 +166,8 @@ class ScrapingService {
         - Usa 0 para números faltantes
         - Usa 2024 si no hay año
         - Crea entrada separada por cada horario
-        - SIN texto adicional, SOLO JSON válido`;
+        - SIN texto adicional, SOLO JSON válido.
+        - Todo el contenido en PROPERCASE`;
 
         try {
             console.log(`[Scraping Service] Enviando solicitud a OpenAI (${extractedInfo.length} caracteres)`);
