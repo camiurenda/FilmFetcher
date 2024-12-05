@@ -33,6 +33,23 @@ class SiteService {
       console.log('Agregando sitio con datos:', datosSite);
       
       const responseSitio = await axios.post(`${API_URL}/api/sites/add`, datosSite);
+      console.log('Agregando nuevo sitio:', datos);
+      
+      // Mapear los nuevos tipos de frecuencia a los existentes
+      let datosFormateados = { ...datos };
+      if (datos.tipoFrecuencia === 'mensual-dia' || datos.tipoFrecuencia === 'mensual-posicion') {
+        datosFormateados.frecuenciaActualizacion = 'mensual';
+      } else {
+        datosFormateados.frecuenciaActualizacion = datos.tipoFrecuencia;
+      }
+      
+      // Formatear configuraciones antes de enviar
+      datosFormateados.configuraciones = datos.configuraciones?.map(config => ({
+        ...config,
+        hora: config.hora ? dayjs(config.hora).format('HH:mm') : '09:00'
+      }));
+
+      const responseSitio = await axios.post(`${API_URL}/api/sites/add`, datosFormateados);
       const sitioId = responseSitio.data._id;
 
       // Datos del schedule mantienen el tipo original
@@ -65,6 +82,23 @@ class SiteService {
       console.log('Actualizando sitio con datos:', datosSite);
       
       const responseSitio = await axios.put(`${API_URL}/api/sites/${id}`, datosSite);
+      console.log('Actualizando sitio:', { id, datos });
+      
+      // Mapear los nuevos tipos de frecuencia a los existentes
+      let datosFormateados = { ...datos };
+      if (datos.tipoFrecuencia === 'mensual-dia' || datos.tipoFrecuencia === 'mensual-posicion') {
+        datosFormateados.frecuenciaActualizacion = 'mensual';
+      } else {
+        datosFormateados.frecuenciaActualizacion = datos.tipoFrecuencia;
+      }
+      
+      // Formatear configuraciones antes de enviar
+      datosFormateados.configuraciones = datos.configuraciones?.map(config => ({
+        ...config,
+        hora: config.hora ? dayjs(config.hora).format('HH:mm') : '09:00'
+      }));
+
+      const responseSitio = await axios.put(`${API_URL}/api/sites/${id}`, datosFormateados);
 
       // Schedule mantiene el tipo original
       if (datos.tipoCarga === 'scraping' && datos.configuraciones?.length > 0) {
