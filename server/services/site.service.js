@@ -41,14 +41,19 @@ class SiteService {
     try {
       console.log('Agregando nuevo sitio:', datos);
       
+      // Mapear los nuevos tipos de frecuencia a los existentes
+      let datosFormateados = { ...datos };
+      if (datos.tipoFrecuencia === 'mensual-dia' || datos.tipoFrecuencia === 'mensual-posicion') {
+        datosFormateados.frecuenciaActualizacion = 'mensual';
+      } else {
+        datosFormateados.frecuenciaActualizacion = datos.tipoFrecuencia;
+      }
+      
       // Formatear configuraciones antes de enviar
-      const datosFormateados = {
-        ...datos,
-        configuraciones: datos.configuraciones?.map(config => ({
-          ...config,
-          hora: config.hora ? dayjs(config.hora).format('HH:mm') : '09:00'
-        }))
-      };
+      datosFormateados.configuraciones = datos.configuraciones?.map(config => ({
+        ...config,
+        hora: config.hora ? dayjs(config.hora).format('HH:mm') : '09:00'
+      }));
 
       const responseSitio = await axios.post(`${API_URL}/api/sites/add`, datosFormateados);
       const sitioId = responseSitio.data._id;
@@ -74,14 +79,19 @@ class SiteService {
     try {
       console.log('Actualizando sitio:', { id, datos });
       
+      // Mapear los nuevos tipos de frecuencia a los existentes
+      let datosFormateados = { ...datos };
+      if (datos.tipoFrecuencia === 'mensual-dia' || datos.tipoFrecuencia === 'mensual-posicion') {
+        datosFormateados.frecuenciaActualizacion = 'mensual';
+      } else {
+        datosFormateados.frecuenciaActualizacion = datos.tipoFrecuencia;
+      }
+      
       // Formatear configuraciones antes de enviar
-      const datosFormateados = {
-        ...datos,
-        configuraciones: datos.configuraciones?.map(config => ({
-          ...config,
-          hora: config.hora ? dayjs(config.hora).format('HH:mm') : '09:00'
-        }))
-      };
+      datosFormateados.configuraciones = datos.configuraciones?.map(config => ({
+        ...config,
+        hora: config.hora ? dayjs(config.hora).format('HH:mm') : '09:00'
+      }));
 
       const responseSitio = await axios.put(`${API_URL}/api/sites/${id}`, datosFormateados);
 
