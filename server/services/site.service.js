@@ -1,38 +1,44 @@
 import axios from 'axios';
 import API_URL from '../config/api';
+import dayjs from 'dayjs';
 
 class SiteService {
-  mapearFrecuencia(tipoFrecuencia) {
-    const mapeo = {
-      'mensual-dia': 'mensual',
-      'mensual-posicion': 'mensual'
-    };
-    return mapeo[tipoFrecuencia] || tipoFrecuencia;
-  }
+  async obtenerSitioConSchedule(id) {
+    try {
+      console.log('Obteniendo sitio con schedule:', id);
+      const [sitioResponse, schedulesResponse] = await Promise.all([
+        axios.get(`${API_URL}/api/sites/${id}`),
+        axios.get(`${API_URL}/api/scraping-schedule`)
+      ]);
 
-  mapearDatosSitio(datos) {
-    // Creamos una copia profunda para no modificar el objeto original
-    const datosMapeados = JSON.parse(JSON.stringify(datos));
-    
-    // Mapeamos la frecuencia principal
-    datosMapeados.frecuenciaActualizacion = this.mapearFrecuencia(datos.tipoFrecuencia || datos.frecuenciaActualizacion);
-    
-    // Mapeamos también en la configuración de scraping si existe
-    if (datosMapeados.configuracionScraping?.tipoFrecuencia) {
-      datosMapeados.configuracionScraping.tipoFrecuencia = this.mapearFrecuencia(datosMapeados.configuracionScraping.tipoFrecuencia);
+      const sitio = sitioResponse.data;
+      const schedules = schedulesResponse.data;
+      console.log('Datos obtenidos:', { sitio, schedules });
+
+      const scheduleExistente = schedules.find(s => s.sitioId === id);
+      
+      if (scheduleExistente) {
+        console.log('Schedule encontrado:', scheduleExistente);
+        return {
+          ...sitio,
+          tipoFrecuencia: scheduleExistente.tipoFrecuencia,
+          configuraciones: scheduleExistente.configuraciones.map(config => ({
+            ...config,
+            hora: config.hora ? dayjs(config.hora, 'HH:mm') : null
+          }))
+        };
+      }
+
+      console.log('No se encontró schedule para el sitio');
+      return sitio;
+    } catch (error) {
+      console.error('Error en obtenerSitioConSchedule:', error);
+      throw error;
     }
-
-    console.log('Datos mapeados para el sitio:', datosMapeados);
-    return datosMapeados;
   }
 
   async agregarSitio(datos) {
     try {
-      // Mapear datos para el sitio
-      const datosSite = this.mapearDatosSitio(datos);
-      console.log('Agregando sitio con datos:', datosSite);
-      
-      const responseSitio = await axios.post(`${API_URL}/api/sites/add`, datosSite);
       console.log('Agregando nuevo sitio:', datos);
       
       // Mapear los nuevos tipos de frecuencia a los existentes
@@ -52,17 +58,11 @@ class SiteService {
       const responseSitio = await axios.post(`${API_URL}/api/sites/add`, datosFormateados);
       const sitioId = responseSitio.data._id;
 
-      // Datos del schedule mantienen el tipo original
       if (datos.tipoCarga === 'scraping' && datos.configuraciones?.length > 0) {
         const scheduleData = {
           sitioId,
           tipoFrecuencia: datos.tipoFrecuencia,
-          configuraciones: datos.configuraciones,
-          tags: datos.tags,
-          prioridad: datos.prioridad,
-          fechaInicio: datos.fechaInicio,
-          fechaFin: datos.fechaFin,
-          scrapingInmediato: datos.scrapingInmediato || false
+          configuraciones: datosFormateados.configuraciones
         };
 
         await axios.post(`${API_URL}/api/scraping-schedule`, scheduleData);
@@ -77,11 +77,6 @@ class SiteService {
 
   async actualizarSitio(id, datos) {
     try {
-      // Mapear datos para el sitio
-      const datosSite = this.mapearDatosSitio(datos);
-      console.log('Actualizando sitio con datos:', datosSite);
-      
-      const responseSitio = await axios.put(`${API_URL}/api/sites/${id}`, datosSite);
       console.log('Actualizando sitio:', { id, datos });
       
       // Mapear los nuevos tipos de frecuencia a los existentes
@@ -100,17 +95,11 @@ class SiteService {
 
       const responseSitio = await axios.put(`${API_URL}/api/sites/${id}`, datosFormateados);
 
-      // Schedule mantiene el tipo original
       if (datos.tipoCarga === 'scraping' && datos.configuraciones?.length > 0) {
         const scheduleData = {
           sitioId: id,
-          tipoFrecuencia: this.mapearFrecuencia(datos.tipoFrecuencia),
-          configuraciones: datos.configuraciones,
-          tags: datos.tags,
-          prioridad: datos.prioridad,
-          fechaInicio: datos.fechaInicio,
-          fechaFin: datos.fechaFin,
-          scrapingInmediato: datos.scrapingInmediato || false
+          tipoFrecuencia: datos.tipoFrecuencia,
+          configuraciones: datosFormateados.configuraciones
         };
 
         try {
@@ -132,16 +121,6 @@ class SiteService {
       return responseSitio.data;
     } catch (error) {
       console.error('Error al actualizar sitio:', error);
-      throw error;
-    }
-  }
-
-  async obtenerSitios() {
-    try {
-      const response = await axios.get(`${API_URL}/api/sites`);
-      return response.data;
-    } catch (error) {
-      console.error('Error al obtener sitios:', error);
       throw error;
     }
   }
