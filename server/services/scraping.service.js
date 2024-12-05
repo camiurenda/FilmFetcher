@@ -7,10 +7,69 @@ const scheduleService = require('./schedule.service');
 require('dotenv').config();
 
 const SCRAPING_SERVICE_URL = process.env.SCRAPING_SERVICE_URL || 'http://localhost:4000';
+const TMDB_API_KEY = process.env.TMDB_API_KEY;
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
 class ScrapingService {
     constructor() {
         this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        this.peliculasDetallesCache = new Map();
+    }
+
+    async obtenerDetallesPelicula(nombrePelicula) {
+        if (this.peliculasDetallesCache.has(nombrePelicula)) {
+            return this.peliculasDetallesCache.get(nombrePelicula);
+        }
+
+        try {
+            console.log(`🎬 [TMDB] Buscando detalles para: ${nombrePelicula}`);
+            const searchResponse = await axios.get(`${TMDB_BASE_URL}/search/movie`, {
+                params: {
+                    api_key: TMDB_API_KEY,
+                    query: nombrePelicula,
+                    language: 'es-ES'
+                }
+            });
+
+            if (searchResponse.data.results.length > 0) {
+                const peliculaId = searchResponse.data.results[0].id;
+                const [detalles, creditos] = await Promise.all([
+                    axios.get(`${TMDB_BASE_URL}/movie/${peliculaId}`, {
+                        params: {
+                            api_key: TMDB_API_KEY,
+                            language: 'es-ES'
+                        }
+                    }),
+                    axios.get(`${TMDB_BASE_URL}/movie/${peliculaId}/credits`, {
+                        params: {
+                            api_key: TMDB_API_KEY
+                        }
+                    })
+                ]);
+
+                const actoresPrincipales = creditos.data.cast
+                    .slice(0, 3)
+                    .map(actor => actor.name)
+                    .join(', ');
+
+                const detallesPelicula = {
+                    titulo: detalles.data.title,
+                    sinopsis: detalles.data.overview,
+                    generos: detalles.data.genres.map(g => g.name).join(', '),
+                    actores: actoresPrincipales,
+                    duracion: detalles.data.runtime || 0,
+                    puntuacion: detalles.data.vote_average.toFixed(1)
+                };
+
+                this.peliculasDetallesCache.set(nombrePelicula, detallesPelicula);
+                console.log(`✅ [TMDB] Detalles encontrados para: ${nombrePelicula}`);
+                return detallesPelicula;
+            }
+            return null;
+        } catch (error) {
+            console.error(`❌ [TMDB] Error al obtener detalles:`, error);
+            return null;
+        }
     }
 
     async initializeJobs() {
@@ -118,6 +177,7 @@ class ScrapingService {
                 throw new Error(causaFallo);
             }
 
+            console.log('🎥 [FilmFetcher] Enriqueciendo datos con TMDB...');
             const projections = this.processAIResponse(proyecciones, site._id);
             
             if (projections.length > 0) {
@@ -164,7 +224,7 @@ class ScrapingService {
         Reglas:
         - Usa "No especificado" para texto faltante
         - Usa 0 para números faltantes
-        - Usa 2024 si no hay año
+        - Asume que es el 2024 si no hay año
         - Crea entrada separada por cada horario
         - SIN texto adicional, SOLO JSON válido.
         - Todo el contenido en PROPERCASE`;
@@ -197,17 +257,27 @@ class ScrapingService {
         }
     }
 
-    processAIResponse(proyecciones, siteId) {
-        return proyecciones.map(p => ({
-            nombrePelicula: p.nombre || p.Nombre,
-            fechaHora: new Date(p.fechaHora || p.FechaHora),
-            director: p.director || p.Director || 'No especificado',
-            genero: p.genero || p.Genero || 'No especificado',
-            duracion: parseInt(p.duracion || p.Duracion) || 0,
-            sala: p.sala || p.Sala || 'No especificada',
-            precio: parseFloat(p.precio || p.Precio) || 0,
-            sitio: siteId
-        })).filter(p => p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
+    async processAIResponse(proyecciones, siteId) {
+        const processedProjections = [];
+        
+        for (const p of proyecciones) {
+            const detallesTMDB = await this.obtenerDetallesPelicula(p.nombre || p.Nombre);
+            
+            processedProjections.push({
+                nombrePelicula: p.nombre || p.Nombre,
+                fechaHora: new Date(p.fechaHora || p.FechaHora),
+                director: detallesTMDB?.director || p.director || p.Director || 'No especificado',
+                genero: detallesTMDB?.generos || p.genero || p.Genero || 'No especificado',
+                duracion: detallesTMDB?.duracion || parseInt(p.duracion || p.Duracion) || 0,
+                sala: p.sala || p.Sala || 'No especificada',
+                precio: parseFloat(p.precio || p.Precio) || 0,
+                sitio: siteId,
+            });
+        }
+
+        return processedProjections.filter(p => 
+            p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime())
+        );
     }
 
     async insertProjections(projections, site) {
