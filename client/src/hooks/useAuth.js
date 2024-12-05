@@ -20,8 +20,9 @@ export const useAuth = () => {
   const handleLogin = () => loginWithRedirect();
   
   const handleLogout = () => {
-    const redirectUri = process.env.REACT_APP_AUTH0_REDIRECT_URI || 'http://localhost:3000';
-    logout({ returnTo: `${redirectUri}/callback` });
+    const redirectUri = `${window.location.origin}/callback`;
+    console.log('Redirigiendo a:', redirectUri);
+    logout({ returnTo: redirectUri });
   };
 
   return {
