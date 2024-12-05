@@ -208,13 +208,24 @@ class ScrapingService {
             }
 
             console.log('🎥 [FilmFetcher] Enriqueciendo datos con TMDB...');
-            const projections = this.processAIResponse(proyecciones, site._id);
+            const projections = await this.processAIResponse(proyecciones, site._id);
             
+            console.log(`🔍 [FilmFetcher] Verificando ${projections?.length || 0} proyecciones procesadas...`);
+            if (!projections || !Array.isArray(projections)) {
+                console.error('❌ [FilmFetcher] Error: projections no es un array válido:', projections);
+                throw new Error('Las proyecciones procesadas no son válidas');
+            }
             if (projections.length > 0) {
-                await this.insertProjections(projections, site);
-                console.log(`✅ [FilmFetcher] ${projections.length} proyecciones guardadas para ${site.nombre}`);
-                await this.updateSiteAndHistory(site._id, 'exitoso', null, projections.length, respuestaOpenAI);
-                return { success: true, proyecciones: projections };
+                console.log(`📥 [FilmFetcher] Insertando proyecciones en la base de datos...`);
+                try {
+                    await this.insertProjections(projections, site);
+                    console.log(`✅ [FilmFetcher] ${projections.length} proyecciones guardadas para ${site.nombre}`);
+                    await this.updateSiteAndHistory(site._id, 'exitoso', null, projections.length, respuestaOpenAI);
+                    return { success: true, proyecciones: projections };
+                } catch (dbError) {
+                    console.error('❌ [FilmFetcher] Error al insertar proyecciones:', dbError);
+                    throw dbError;
+                }
             } else {
                 causaFallo = 'No se encontraron proyecciones válidas';
                 console.log('⚠️ [FilmFetcher]', causaFallo);
@@ -257,7 +268,7 @@ class ScrapingService {
         - Asume que es el 2024 si no hay año
         - Crea entrada separada por cada horario
         - SIN texto adicional, SOLO JSON válido.
-        - Todo el contenido en PROPERCASE`;
+        - Todo el contenido en PROPERCASE. NO INSERTES TITULOS EN MAYUSCULAS.`;
 
         try {
             const fullPrompt = prompt + "\n\nContenido:\n" + extractedInfo;
@@ -282,6 +293,8 @@ class ScrapingService {
                 max_tokens: 8000
             });
 
+            console.log('📘 [OpenAI] Respuesta completa:', JSON.stringify(response, null, 2));
+
             let content = response.choices[0]?.message?.content.trim() || "{}";
             content = content.replace(/```json\n?|\n?```/g, '').trim();
             
@@ -293,50 +306,99 @@ class ScrapingService {
     }
 
     async processAIResponse(proyecciones, siteId) {
+        console.log(`🎯 Procesando ${proyecciones.length} proyecciones para sitio ${siteId}`);
         const processedProjections = [];
         
         for (const p of proyecciones) {
-            const detallesTMDB = await this.obtenerDetallesPelicula(p.nombre || p.Nombre);
-            
-            processedProjections.push({
-                nombrePelicula: p.nombre || p.Nombre,
-                fechaHora: new Date(p.fechaHora || p.FechaHora),
-                director: detallesTMDB?.director || p.director || p.Director || 'No especificado',
-                genero: detallesTMDB?.generos || p.genero || p.Genero || 'No especificado',
-                duracion: detallesTMDB?.duracion || parseInt(p.duracion || p.Duracion) || 0,
-                sala: p.sala || p.Sala || 'No especificada',
-                precio: parseFloat(p.precio || p.Precio) || 0,
-                sitio: siteId,
-            });
+            try {
+                const nombrePelicula = p.nombre || p.Nombre;
+                const fechaHora = new Date(p.fechaHora || p.FechaHora);
+                
+                if (!nombrePelicula || !fechaHora || isNaN(fechaHora.getTime())) {
+                    console.log(`⚠️ Proyección inválida:`, {
+                        nombre: nombrePelicula,
+                        fecha: p.fechaHora || p.FechaHora
+                    });
+                    continue;
+                }
+
+                const detallesTMDB = await this.obtenerDetallesPelicula(nombrePelicula);
+                
+                const proyeccion = {
+                    nombrePelicula,
+                    fechaHora,
+                    director: detallesTMDB?.director || p.director || p.Director || 'No especificado',
+                    genero: detallesTMDB?.generos || p.genero || p.Genero || 'No especificado',
+                    duracion: detallesTMDB?.duracion || parseInt(p.duracion || p.Duracion) || 0,
+                    sala: p.sala || p.Sala || 'No especificada',
+                    precio: parseFloat(p.precio || p.Precio) || 0,
+                    sitio: siteId
+                };
+
+                console.log(`✅ Proyección procesada: ${nombrePelicula} - ${fechaHora.toISOString()}`);
+                processedProjections.push(proyeccion);
+            } catch (error) {
+                console.error(`❌ Error procesando proyección:`, error);
+                continue;
+            }
         }
 
-        return processedProjections.filter(p => 
-            p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime())
-        );
+        console.log(`📊 Total proyecciones procesadas: ${processedProjections.length}`);
+        if (processedProjections.length === 0) {
+            console.warn('⚠️ [FilmFetcher] No se procesaron proyecciones');
+        }
+        return processedProjections;
     }
-
     async insertProjections(projections, site) {
+        console.log(`📊 [DB] Iniciando inserción de ${projections.length} proyecciones para ${site.nombre}`);
+        let insertadas = 0;
+        let duplicadas = 0;
+        let errores = 0;
+
         for (const projection of projections) {
             try {
+                console.log(`🎬 [DB] Procesando: ${projection.nombrePelicula} - ${projection.fechaHora}`);
                 const claveUnica = `${projection.nombrePelicula}-${projection.fechaHora.toISOString()}-${site._id}`;
-                await Projection.findOneAndUpdate(
+                
+                const doc = await Projection.findOneAndUpdate(
                     { claveUnica },
                     { 
                         ...projection, 
                         sitio: site._id, 
                         nombreCine: site.nombre,
-                        claveUnica
+                        claveUnica,
+                        habilitado: true,
+                        fechaCreacion: new Date()
                     },
-                    { upsert: true, new: true, setDefaultsOnInsert: true }
+                    { 
+                        upsert: true, 
+                        new: true, 
+                        setDefaultsOnInsert: true,
+                        runValidators: true
+                    }
                 );
+
+                if (doc) {
+                    console.log(`✅ [DB] Insertada/Actualizada: ${projection.nombrePelicula}`);
+                    insertadas++;
+                }
             } catch (error) {
                 if (error.code === 11000) {
-                    console.log(`Proyección duplicada ignorada: ${projection.nombrePelicula}`);
+                    console.log(`⚠️ [DB] Duplicada: ${projection.nombrePelicula}`);
+                    duplicadas++;
                 } else {
-                    throw error;
+                    console.error(`❌ [DB] Error al insertar ${projection.nombrePelicula}:`, error);
+                    errores++;
                 }
             }
         }
+
+        console.log(`📈 [DB] Resumen de inserción:
+            - Total procesadas: ${projections.length}
+            - Insertadas/Actualizadas: ${insertadas}
+            - Duplicadas: ${duplicadas}
+            - Errores: ${errores}
+        `);
     }
 
     async updateSiteAndHistory(siteId, estado, mensajeError, cantidadProyecciones, respuestaOpenAI, causaFallo = '') {
