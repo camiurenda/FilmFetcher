@@ -44,13 +44,15 @@ const SiteModal = ({
   
           setSchedule(scheduleData);
 
-          // Combinar datos del sitio y schedule
+          // Combinar datos del sitio y schedule, preservando diasMes y diasSemana
           const formData = {
             ...sitioData,
             tipoFrecuencia: scheduleData?.tipoFrecuencia,
             configuraciones: scheduleData?.configuraciones?.map(config => ({
               ...config,
-              hora: config.hora ? dayjs(moment(config.hora, 'HH:mm')) : undefined
+              hora: config.hora ? dayjs(moment(config.hora, 'HH:mm')) : undefined,
+              diasMes: config.diasMes || [],
+              diasSemana: config.diasSemana || []
             })) || []
           };
   
@@ -85,9 +87,6 @@ const SiteModal = ({
         delete transformedValues.tipoFrecuencia;
         delete transformedValues.configuraciones;
       } else {
-        // Set frecuenciaActualizacion from tipoFrecuencia for the site model
-        transformedValues.frecuenciaActualizacion = values.tipoFrecuencia;
-
         // Transform configurations
         if (values.configuraciones && values.configuraciones.length > 0) {
           transformedValues.configuraciones = values.configuraciones.map(config => ({
@@ -95,19 +94,8 @@ const SiteModal = ({
             hora: config.hora ? dayjs(config.hora).format('HH:mm') : undefined,
             descripcion: config.descripcion || '',
             diasSemana: config.diasSemana || [],
-            diasMes: config.diasMes || [],
-            semanaMes: config.semanaMes,
-            diaSemana: config.diaSemana
+            diasMes: config.diasMes || []
           }));
-
-          // Set configuracionScraping for backward compatibility
-          const firstConfig = transformedValues.configuraciones[0];
-          transformedValues.configuracionScraping = {
-            tipoFrecuencia: values.tipoFrecuencia,
-            hora: firstConfig.hora || '09:00', // Default to 9 AM if no time is set
-            diasSemana: firstConfig.diasSemana || [],
-            errores: []
-          };
         }
       }
 
@@ -128,6 +116,13 @@ const SiteModal = ({
     } catch (error) {
       console.error('Error en validación:', error);
     }
+  };
+
+  const handleFrecuenciaChange = (value) => {
+    // Reset configuraciones when frequency changes
+    form.setFieldsValue({
+      configuraciones: [{}]
+    });
   };
 
   return (
@@ -260,13 +255,15 @@ const SiteModal = ({
                   name="tipoFrecuencia"
                   label="Frecuencia de Actualización"
                   rules={[{ required: true, message: 'Seleccione la frecuencia' }]}
+                  tooltip="Define cada cuánto se actualizará la información"
                 >
-                  <Select placeholder="Seleccione frecuencia">
+                  <Select 
+                    placeholder="Seleccione frecuencia"
+                    onChange={handleFrecuenciaChange}
+                  >
                     <Option value="diaria">Diaria</Option>
                     <Option value="semanal">Semanal</Option>
-                    <Option value="mensual-dia">Mensual (por día)</Option>
-                    <Option value="mensual-posicion">Mensual (por posición)</Option>
-                    <Option value="test">Test</Option>
+                    <Option value="mensual">Mensual</Option>
                   </Select>
                 </Form.Item>
               </Col>
@@ -310,7 +307,9 @@ const SiteModal = ({
                   tipoFrecuencia: schedule?.tipoFrecuencia,
                   configuraciones: schedule?.configuraciones?.map(config => ({
                     ...config,
-                    hora: config.hora ? dayjs(moment(config.hora, 'HH:mm')) : undefined
+                    hora: config.hora ? dayjs(moment(config.hora, 'HH:mm')) : undefined,
+                    diasMes: config.diasMes || [],
+                    diasSemana: config.diasSemana || []
                   })) || []
                 }}
               />

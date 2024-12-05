@@ -59,13 +59,11 @@ const SiteSchema = new mongoose.Schema({
   configuracionScraping: {
     tipoFrecuencia: {
       type: String,
-      enum: ['diaria', 'semanal', 'mensual-dia', 'mensual-posicion', 'test'],
+      enum: ['diaria', 'semanal', 'mensual', 'test'],
     },
     hora: String,
     diasSemana: [Number],
     diaMes: Number,
-    semanaMes: String,
-    diaSemana: Number,
     ultimoScrapingExitoso: Date,
     errores: [{
       fecha: Date,

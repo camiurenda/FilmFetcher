@@ -23,7 +23,7 @@ const ScrapingScheduleSchema = new mongoose.Schema({
 
     tipoFrecuencia: {
         type: String,
-        enum: ['diaria', 'semanal', 'mensual-dia', 'mensual-posicion', 'test'],
+        enum: ['diaria', 'semanal', 'mensual', 'test'],
         required: true
     },
 
@@ -40,8 +40,6 @@ const ScrapingScheduleSchema = new mongoose.Schema({
         },
         diasSemana: [Number],
         diasMes: [Number],
-        semanaMes: String,
-        diaSemana: Number,
         descripcion: String
     }],
 
@@ -104,19 +102,21 @@ ScrapingScheduleSchema.methods.calcularProximaEjecucion = function(desde = new D
     }
 
     const ahora = moment(desde);
-    let proximaEjecucion = null;
+    let proximaEjecucionGlobal = null;
 
     for (const config of this.configuraciones) {
         console.log('Procesando configuración:', config);
         
         const [horas, minutos] = config.hora.split(':').map(Number);
         let fecha = moment(ahora).hour(horas).minute(minutos).second(0);
+        let fechasCandidatas = [];
 
         // Si la fecha calculada es menor que ahora, ajustar según frecuencia
         if (fecha.isSameOrBefore(ahora)) {
             switch (this.tipoFrecuencia) {
                 case 'diaria':
                     fecha.add(1, 'day');
+                    fechasCandidatas.push(fecha.clone());
                     break;
 
                 case 'semanal':
@@ -127,60 +127,65 @@ ScrapingScheduleSchema.methods.calcularProximaEjecucion = function(desde = new D
                     
                     let encontrado = false;
                     let intentos = 0;
-                    const diasOrdenados = [...config.diasSemana].sort((a, b) => a - b);
+                    const diasSemanaOrdenados = [...config.diasSemana].sort((a, b) => a - b);
                     
                     while (!encontrado && intentos < 8) {
                         fecha.add(1, 'day');
-                        if (diasOrdenados.includes(fecha.day())) {
+                        if (diasSemanaOrdenados.includes(fecha.day())) {
+                            fechasCandidatas.push(fecha.clone());
                             encontrado = true;
                         }
                         intentos++;
                     }
-                    
-                    if (!encontrado) {
-                        console.log('No se encontró un día válido en la semana');
-                        continue;
-                    }
                     break;
 
-                case 'mensual-dia':
+                case 'mensual':
                     if (!config.diasMes || config.diasMes.length === 0) {
                         console.log('No hay días del mes configurados');
                         continue;
                     }
                     
-                    let diaEncontrado = false;
-                    for (const dia of config.diasMes.sort((a, b) => a - b)) {
+                    const diasMesOrdenados = [...config.diasMes].sort((a, b) => a - b);
+                    
+                    // Verificar días en el mes actual
+                    for (const dia of diasMesOrdenados) {
                         const fechaPrueba = moment(fecha).date(dia);
                         if (fechaPrueba.isAfter(ahora)) {
-                            fecha = fechaPrueba;
-                            diaEncontrado = true;
-                            break;
+                            fechasCandidatas.push(fechaPrueba.clone());
                         }
                     }
                     
-                    if (!diaEncontrado) {
-                        fecha.add(1, 'month').date(config.diasMes[0]);
+                    // Si no hay fechas válidas en el mes actual, verificar el próximo mes
+                    if (fechasCandidatas.length === 0) {
+                        const fechaProximoMes = fecha.clone().add(1, 'month').startOf('month');
+                        for (const dia of diasMesOrdenados) {
+                            fechasCandidatas.push(fechaProximoMes.clone().date(dia));
+                        }
                     }
                     break;
 
                 case 'test':
-                    fecha = moment(ahora).add(1, 'minute');
+                    fechasCandidatas.push(moment(ahora).add(1, 'minute'));
                     break;
             }
+        } else {
+            fechasCandidatas.push(fecha.clone());
         }
 
-        if (!proximaEjecucion || fecha.isBefore(proximaEjecucion)) {
-            proximaEjecucion = fecha;
+        // Encontrar la fecha más cercana entre las candidatas
+        for (const fechaCandidata of fechasCandidatas) {
+            if (!proximaEjecucionGlobal || fechaCandidata.isBefore(proximaEjecucionGlobal)) {
+                proximaEjecucionGlobal = fechaCandidata;
+            }
         }
     }
 
-    console.log('Próxima ejecución calculada:', proximaEjecucion?.format());
-    return proximaEjecucion?.toDate();
+    console.log('Próxima ejecución calculada:', proximaEjecucionGlobal?.format());
+    return proximaEjecucionGlobal?.toDate();
 };
 
 ScrapingScheduleSchema.pre('save', function(next) {
-    console.log('Pre-save hook ejecutándose para schedule:', this._id);
+    //console.log('Pre-save hook ejecutándose para schedule:', this._id);
     
     try {
         if (this.isModified('configuraciones') || this.isModified('tipoFrecuencia') || !this.proximaEjecucion) {

@@ -90,23 +90,23 @@ router.post('/add', async (req, res) => {
 
           const newSchedule = new ScrapingSchedule({
               sitioId: savedSite._id,
-              tipoFrecuencia,
-              configuraciones,
+              tipoFrecuencia: tipoFrecuencia,
+              configuraciones: configuraciones.map(config => ({
+                  hora: config.hora,
+                  diasSemana: config.diasSemana || [],
+                  diasMes: config.diasMes || [],
+                  descripcion: config.descripcion || ''
+              })),
               tags,
               prioridad,
               fechaInicio,
               fechaFin,
-              proximaEjecucion: new Date() // Establecemos la próxima ejecución como ahora
+              proximaEjecucion: new Date()
           });
 
-          // El pre-save hook calculará la próxima ejecución real basada en la configuración
           console.log('Creando nuevo schedule con configuración:', {
               tipoFrecuencia,
-              configuraciones: configuraciones.map(c => ({
-                  hora: c.hora,
-                  diasSemana: c.diasSemana,
-                  diasMes: c.diasMes
-              }))
+              configuraciones: newSchedule.configuraciones
           });
 
           await newSchedule.save();
@@ -199,17 +199,20 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     console.log('Actualizando sitio:', req.params.id);
+    console.log('Datos recibidos:', req.body);
+    
     const { id } = req.params;
     const updateData = { ...req.body };
 
     // Extraer datos del schedule
     const scheduleData = {
       tipoFrecuencia: updateData.tipoFrecuencia,
-      configuraciones: [{
-        hora: updateData.configuracionScraping?.hora,
-        diasSemana: updateData.configuracionScraping?.diasSemana || [],
-        descripcion: 'Configuración actualizada del sitio'
-      }],
+      configuraciones: updateData.configuraciones?.map(config => ({
+        hora: config.hora,
+        diasSemana: config.diasSemana || [],
+        diasMes: config.diasMes || [],
+        descripcion: config.descripcion || 'Configuración actualizada del sitio'
+      })) || [],
       tags: updateData.tags,
       prioridad: updateData.prioridad,
       fechaInicio: updateData.fechaInicio,
@@ -217,8 +220,16 @@ router.put('/:id', async (req, res) => {
       scrapingInmediato: updateData.scrapingInmediato
     };
 
+    console.log('Datos del schedule:', scheduleData);
+
+    // Actualizar datos del sitio
+    updateData.activoParaScraping = updateData.tipoCarga === 'scraping';
+    // Mantener la frecuencia de actualización original
+    updateData.frecuenciaActualizacion = updateData.tipoFrecuencia;
+
     // Limpiar datos que no pertenecen al modelo Site
     delete updateData.tipoFrecuencia;
+    delete updateData.configuraciones;
     delete updateData.tags;
     delete updateData.prioridad;
     delete updateData.fechaInicio;
@@ -226,10 +237,6 @@ router.put('/:id', async (req, res) => {
     delete updateData.scrapingInmediato;
     delete updateData.ultimoError;
     delete updateData.bloqueo;
-
-    // Actualizar datos del sitio
-    updateData.activoParaScraping = updateData.tipoCarga === 'scraping';
-    updateData.frecuenciaActualizacion = scheduleData.tipoFrecuencia;
 
     const updatedSite = await Site.findByIdAndUpdate(
       id,

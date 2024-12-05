@@ -1,19 +1,32 @@
-// src/services/site.service.js
 import axios from 'axios';
 import API_URL from '../config/api';
 
 class SiteService {
+  mapearFrecuencia(tipoFrecuencia) {
+    const mapeo = {
+      'mensual-dia': 'mensual',
+      'mensual-posicion': 'mensual'
+    };
+    return mapeo[tipoFrecuencia] || tipoFrecuencia;
+  }
+
   async agregarSitio(datos) {
     try {
-      // Primero crear el sitio
-      const responseSitio = await axios.post(`${API_URL}/api/sites/add`, datos);
+      // Mapear frecuencia para el modelo Site
+      const datosSite = {
+        ...datos,
+        frecuenciaActualizacion: this.mapearFrecuencia(datos.tipoFrecuencia)
+      };
+
+      console.log('Agregando sitio con datos:', datosSite);
+      const responseSitio = await axios.post(`${API_URL}/api/sites/add`, datosSite);
       const sitioId = responseSitio.data._id;
 
-      // Si es scraping, crear el schedule
+      // Si es scraping, crear el schedule con el tipo original
       if (datos.tipoCarga === 'scraping' && datos.configuraciones?.length > 0) {
         const scheduleData = {
           sitioId,
-          tipoFrecuencia: datos.tipoFrecuencia,
+          tipoFrecuencia: datos.tipoFrecuencia, // Mantenemos el tipo original
           configuraciones: datos.configuraciones,
           tags: datos.tags,
           prioridad: datos.prioridad,
@@ -22,6 +35,7 @@ class SiteService {
           scrapingInmediato: datos.scrapingInmediato || false
         };
 
+        console.log('Creando schedule con datos:', scheduleData);
         await axios.post(`${API_URL}/api/scraping-schedule`, scheduleData);
       }
 
@@ -34,14 +48,20 @@ class SiteService {
 
   async actualizarSitio(id, datos) {
     try {
-      // Actualizar sitio
-      const responseSitio = await axios.put(`${API_URL}/api/sites/${id}`, datos);
+      // Mapear frecuencia para el modelo Site
+      const datosSite = {
+        ...datos,
+        frecuenciaActualizacion: this.mapearFrecuencia(datos.tipoFrecuencia)
+      };
 
-      // Si es scraping, actualizar o crear schedule
+      console.log('Actualizando sitio con datos:', datosSite);
+      const responseSitio = await axios.put(`${API_URL}/api/sites/${id}`, datosSite);
+
+      // Si es scraping, actualizar o crear schedule con el tipo original
       if (datos.tipoCarga === 'scraping' && datos.configuraciones?.length > 0) {
         const scheduleData = {
           sitioId: id,
-          tipoFrecuencia: datos.tipoFrecuencia,
+          tipoFrecuencia: datos.tipoFrecuencia, // Mantenemos el tipo original
           configuraciones: datos.configuraciones,
           tags: datos.tags,
           prioridad: datos.prioridad,
@@ -50,17 +70,19 @@ class SiteService {
           scrapingInmediato: datos.scrapingInmediato || false
         };
 
-        // Intentar actualizar schedule existente
         try {
+          console.log('Buscando schedule existente para sitio:', id);
           const scheduleResponse = await axios.get(`${API_URL}/api/scraping-schedule/sitio/${id}`);
           if (scheduleResponse.data._id) {
+            console.log('Actualizando schedule existente:', scheduleResponse.data._id);
             await axios.put(`${API_URL}/api/scraping-schedule/${scheduleResponse.data._id}`, scheduleData);
           } else {
+            console.log('Creando nuevo schedule');
             await axios.post(`${API_URL}/api/scraping-schedule`, scheduleData);
           }
         } catch (error) {
-          // Si no existe schedule, crear uno nuevo
           if (error.response?.status === 404) {
+            console.log('Schedule no encontrado, creando uno nuevo');
             await axios.post(`${API_URL}/api/scraping-schedule`, scheduleData);
           } else {
             throw error;

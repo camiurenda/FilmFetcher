@@ -33,12 +33,10 @@ const { TextArea } = Input;
 const createTimeObject = (time) => {
   if (!time) return undefined;
   
-  // If it's already a dayjs object, return it
   if (dayjs.isDayjs(time)) {
     return time;
   }
   
-  // If it's a string in HH:mm format
   if (typeof time === 'string') {
     const [hours, minutes] = time.split(':').map(Number);
     if (!isNaN(hours) && !isNaN(minutes)) {
@@ -49,38 +47,57 @@ const createTimeObject = (time) => {
   return undefined;
 };
 
+// Templates reorganizados por frecuencia
 const templates = {
-  diarioLaboral: {
-    tipoFrecuencia: 'semanal',
-    configuraciones: [{
-      hora: createTimeObject('09:00'),
-      diasSemana: [1, 2, 3, 4, 5],
-      descripcion: 'Scraping diario en días laborales'
-    }],
-    tags: ['produccion', 'laboral']
+  semanal: {
+    diasLaborales: {
+      descripcion: 'Días Laborales (Lun-Vie)',
+      configuraciones: [{
+        hora: createTimeObject('09:00'),
+        diasSemana: [1, 2, 3, 4, 5],
+        descripcion: 'Scraping en días laborales'
+      }]
+    },
+    finDeSemana: {
+      descripcion: 'Fin de Semana (Sáb-Dom)',
+      configuraciones: [{
+        hora: createTimeObject('10:00'),
+        diasSemana: [0, 6],
+        descripcion: 'Scraping de fin de semana'
+      }]
+    }
   },
-  finDeSemana: {
-    tipoFrecuencia: 'semanal',
-    configuraciones: [{
-      hora: createTimeObject('10:00'),
-      diasSemana: [0, 6],
-      descripcion: 'Scraping de fin de semana'
-    }],
-    tags: ['produccion', 'finde']
-  },
-  inicioMes: {
-    tipoFrecuencia: 'mensual-dia',
-    configuraciones: [{
-      hora: createTimeObject('08:00'),
-      diasMes: [1],
-      descripcion: 'Scraping al inicio de cada mes'
-    }],
-    tags: ['produccion', 'mensual']
+  mensual: {
+    inicioDeMes: {
+      descripcion: 'Inicio de Mes (Día 1)',
+      configuraciones: [{
+        hora: createTimeObject('08:00'),
+        diasMes: [1],
+        descripcion: 'Scraping al inicio del mes'
+      }]
+    },
+    mitadDeMes: {
+      descripcion: 'Mitad de Mes (Día 15)',
+      configuraciones: [{
+        hora: createTimeObject('08:00'),
+        diasMes: [15],
+        descripcion: 'Scraping a mitad del mes'
+      }]
+    },
+    finDeMes: {
+      descripcion: 'Fin de Mes (Día 28/30)',
+      configuraciones: [{
+        hora: createTimeObject('08:00'),
+        diasMes: [28],
+        descripcion: 'Scraping al final del mes'
+      }]
+    }
   }
 };
 
 const ScrapingConfig = ({ initialValues = {}, form, onError }) => {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const tipoFrecuencia = Form.useWatch('tipoFrecuencia', form);
 
   useEffect(() => {
     if (initialValues) {
@@ -107,37 +124,46 @@ const ScrapingConfig = ({ initialValues = {}, form, onError }) => {
     }
   }, [initialValues, form]);
 
-  const handleTemplateSelect = (template) => {
-    setSelectedTemplate(template);
-    const templateData = templates[template];
-    
-    // Asegurarse de que el tipo de frecuencia se establezca primero
-    form.setFieldsValue({
-      tipoFrecuencia: templateData.tipoFrecuencia,
-      tags: templateData.tags
-    });
+  // Reset template when frequency changes
+  useEffect(() => {
+    setSelectedTemplate(null);
+  }, [tipoFrecuencia]);
 
-    // Luego establecer las configuraciones
+  const handleTemplateSelect = (templateKey, frecuencia) => {
+    setSelectedTemplate(templateKey);
+    const templateData = templates[frecuencia][templateKey];
+    
     form.setFieldsValue({
       configuraciones: templateData.configuraciones
     });
   };
 
-  const renderTemplates = () => (
-    <Card title="Templates Predefinidos" className="mb-4">
-      <Space>
-        {Object.entries(templates).map(([key, template]) => (
-          <Button
-            key={key}
-            onClick={() => handleTemplateSelect(key)}
-            type={selectedTemplate === key ? 'primary' : 'default'}
-          >
-            {template.configuraciones[0].descripcion}
-          </Button>
-        ))}
-      </Space>
-    </Card>
-  );
+  const renderTemplates = () => {
+    if (!tipoFrecuencia || tipoFrecuencia === 'diaria') {
+      return null;
+    }
+
+    const currentTemplates = templates[tipoFrecuencia];
+    if (!currentTemplates) {
+      return null;
+    }
+
+    return (
+      <Card title="Templates Predefinidos (Opcional)" className="mb-4">
+        <Space>
+          {Object.entries(currentTemplates).map(([key, template]) => (
+            <Button
+              key={key}
+              onClick={() => handleTemplateSelect(key, tipoFrecuencia)}
+              type={selectedTemplate === key ? 'primary' : 'default'}
+            >
+              {template.descripcion}
+            </Button>
+          ))}
+        </Space>
+      </Card>
+    );
+  };
 
   const renderErrorInfo = () => {
     const error = form.getFieldValue('ultimoError');
@@ -247,7 +273,7 @@ const ScrapingConfig = ({ initialValues = {}, form, onError }) => {
                     />
                   </Form.Item>
 
-                  {form.getFieldValue('tipoFrecuencia') === 'semanal' && (
+                  {tipoFrecuencia === 'semanal' && (
                     <Form.Item
                       {...field}
                       name={[field.name, "diasSemana"]}
@@ -266,7 +292,7 @@ const ScrapingConfig = ({ initialValues = {}, form, onError }) => {
                     </Form.Item>
                   )}
 
-                  {form.getFieldValue('tipoFrecuencia') === 'mensual-dia' && (
+                  {tipoFrecuencia === 'mensual' && (
                     <Form.Item
                       {...field}
                       name={[field.name, "diasMes"]}
@@ -279,42 +305,6 @@ const ScrapingConfig = ({ initialValues = {}, form, onError }) => {
                         ))}
                       </Select>
                     </Form.Item>
-                  )}
-
-                  {form.getFieldValue('tipoFrecuencia') === 'mensual-posicion' && (
-                    <>
-                      <Form.Item
-                        {...field}
-                        name={[field.name, "semanaMes"]}
-                        label="Semana del Mes"
-                        rules={[{ required: true, message: 'Seleccione la semana' }]}
-                      >
-                        <Select className="w-full">
-                          <Option value="primera">Primera</Option>
-                          <Option value="segunda">Segunda</Option>
-                          <Option value="tercera">Tercera</Option>
-                          <Option value="cuarta">Cuarta</Option>
-                          <Option value="ultima">Última</Option>
-                        </Select>
-                      </Form.Item>
-
-                      <Form.Item
-                        {...field}
-                        name={[field.name, "diaSemana"]}
-                        label="Día de la Semana"
-                        rules={[{ required: true, message: 'Seleccione el día' }]}
-                      >
-                        <Select className="w-full">
-                          <Option value={0}>Domingo</Option>
-                          <Option value={1}>Lunes</Option>
-                          <Option value={2}>Martes</Option>
-                          <Option value={3}>Miércoles</Option>
-                          <Option value={4}>Jueves</Option>
-                          <Option value={5}>Viernes</Option>
-                          <Option value={6}>Sábado</Option>
-                        </Select>
-                      </Form.Item>
-                    </>
                   )}
                 </Space>
               </Card>

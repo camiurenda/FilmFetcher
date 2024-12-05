@@ -46,20 +46,20 @@ class ScheduleService {
 
     async verificarCambiosSchedules() {
         try {
-            console.log('[Schedule] Verificando cambios en schedules...');
+            //console.log('[Schedule] Verificando cambios en schedules...');
             const schedulesActuales = await ScrapingSchedule.find({ activo: true }).populate('sitioId');
             
             for (const schedule of schedulesActuales) {
                 const jobActual = this.scheduledJobs.get(schedule._id.toString());
                 
                 if (!jobActual) {
-                    console.log(`[Schedule] Nuevo schedule detectado: ${schedule._id}`);
+                   // console.log(`[Schedule] Nuevo schedule detectado: ${schedule._id}`);
                     await this.programarScraping(schedule);
                     continue;
                 }
 
                 if (this.hayCambiosEnConfiguracion(schedule, jobActual.config)) {
-                    console.log(`[Schedule] Cambios detectados en schedule ${schedule._id}`);
+                 //   console.log(`[Schedule] Cambios detectados en schedule ${schedule._id}`);
                     await this.programarScraping(schedule);
                 }
             }
@@ -67,13 +67,13 @@ class ScheduleService {
             for (const [id, job] of this.scheduledJobs) {
                 const scheduleExiste = schedulesActuales.find(s => s._id.toString() === id);
                 if (!scheduleExiste) {
-                    console.log(`[Schedule] Eliminando schedule inactivo: ${id}`);
+                //    console.log(`[Schedule] Eliminando schedule inactivo: ${id}`);
                     clearTimeout(job.timer);
                     this.scheduledJobs.delete(id);
                 }
             }
         } catch (error) {
-            console.error('[Schedule] Error al verificar cambios:', error);
+           console.error('[Schedule] Error al verificar cambios:', error);
         }
     }
 
@@ -90,7 +90,7 @@ class ScheduleService {
 
     async programarScraping(schedule) {
         try {
-            console.log(`[Schedule] Programando scraping para sitio ${schedule.sitioId?.nombre || schedule._id}`);
+           //console.log(`[Schedule] Programando scraping para sitio ${schedule.sitioId?.nombre || schedule._id}`);
             
             if (!schedule.sitioId) {
                 throw new Error('Schedule sin sitio asociado');
@@ -99,28 +99,28 @@ class ScheduleService {
             if (this.scheduledJobs.has(schedule._id.toString())) {
                 clearTimeout(this.scheduledJobs.get(schedule._id.toString()).timer);
                 this.scheduledJobs.delete(schedule._id.toString());
-                console.log(`[Schedule] Job anterior cancelado para ${schedule._id}`);
+               //console.log(`[Schedule] Job anterior cancelado para ${schedule._id}`);
             }
 
             const ahora = new Date();
             const proximaEjecucion = await this.calcularProximaEjecucion(schedule, ahora);
             
             if (!proximaEjecucion) {
-                console.log(`[Schedule] No se pudo calcular próxima ejecución para ${schedule._id}`);
+              //console.log(`[Schedule] No se pudo calcular próxima ejecución para ${schedule._id}`);
                 return false;
             }
 
             const tiempoHastaEjecucion = proximaEjecucion.getTime() - ahora.getTime();
             
-            console.log(`[Schedule] Nueva programación:`, {
-                sitio: schedule.sitioId.nombre,
-                ahora: ahora.toLocaleString(),
-                proximaEjecucion: proximaEjecucion.toLocaleString(),
-                tiempoHastaEjecucion: Math.round(tiempoHastaEjecucion / 1000 / 60) + ' minutos'
-            });
+            //console.log(`[Schedule] Nueva programación:`, {
+            //    sitio: schedule.sitioId.nombre,
+            //    ahora: ahora.toLocaleString(),
+            //    proximaEjecucion: proximaEjecucion.toLocaleString(),
+            //    tiempoHastaEjecucion: Math.round(tiempoHastaEjecucion / 1000 / 60) + ' minutos'
+            //});
 
             if (tiempoHastaEjecucion <= 1) {
-                console.log(`[Schedule] Tiempo negativo para ${schedule._id}, ejecutando inmediatamente...`);
+                //console.log(`[Schedule] Tiempo negativo para ${schedule._id}, ejecutando inmediatamente...`);
                 await this.ejecutarScraping(schedule);
                 schedule.proximaEjecucion = await this.calcularProximaEjecucion(schedule, new Date());
                 await schedule.save();
@@ -129,12 +129,12 @@ class ScheduleService {
 
             const timer = setTimeout(async () => {
                 try {
-                    console.log(`[Schedule] ⏰ Ejecutando scraping programado para ${schedule.sitioId.nombre}`);
+                    //console.log(`[Schedule] ⏰ Ejecutando scraping programado para ${schedule.sitioId.nombre}`);
                     await this.ejecutarScraping(schedule);
                     
                     await this.programarScraping(schedule);
                 } catch (error) {
-                    console.error(`[Schedule] Error en ejecución de ${schedule.sitioId.nombre}:`, error);
+                    //console.error(`[Schedule] Error en ejecución de ${schedule.sitioId.nombre}:`, error);
                     
                     schedule.intentosFallidos = (schedule.intentosFallidos || 0) + 1;
                     schedule.ultimoError = {
@@ -191,14 +191,12 @@ class ScheduleService {
 
     async calcularProximaEjecucion(schedule, desde = new Date()) {
         try {
-            console.log(`[Schedule] Calculando próxima ejecución para ${schedule._id}`);
-            
             if (!schedule.sitioId) {
                 throw new Error('Schedule sin sitio asociado');
             }
 
             const ahora = moment(desde).tz(this.timezone);
-            console.log(`[Schedule] Hora actual: ${ahora.format('YYYY-MM-DD HH:mm:ss')}`);
+            let proximaEjecucionGlobal = null;
 
             if (schedule.configuraciones && schedule.configuraciones.length > 0) {
                 for (const config of schedule.configuraciones) {
@@ -210,62 +208,73 @@ class ScheduleService {
                         .seconds(0)
                         .milliseconds(0);
 
-                    console.log(`[Schedule] Evaluando hora configurada: ${fecha.format('YYYY-MM-DD HH:mm:ss')}`);
-
                     if (fecha.isSameOrBefore(ahora)) {
                         fecha.add(1, 'day');
-                        console.log(`[Schedule] Fecha ajustada al día siguiente: ${fecha.format('YYYY-MM-DD HH:mm:ss')}`);
                     }
 
+                    let fechasCandidatas = [];
+
                     switch (schedule.tipoFrecuencia) {
-                        case 'semanal':
-                            if (config.diasSemana && !config.diasSemana.includes(fecha.day())) {
+                        case 'semanal': {
+                            if (config.diasSemana && config.diasSemana.length > 0) {
                                 let encontrado = false;
                                 let intentos = 0;
                                 while (!encontrado && intentos < 7) {
-                                    fecha.add(1, 'day');
                                     if (config.diasSemana.includes(fecha.day())) {
+                                        fechasCandidatas.push(fecha.clone());
                                         encontrado = true;
                                     }
+                                    fecha.add(1, 'day');
                                     intentos++;
                                 }
-                                if (!encontrado) continue;
                             }
                             break;
+                        }
 
-                        case 'mensual-dia':
-                            if (config.diasMes && !config.diasMes.includes(fecha.date())) {
-                                let diaEncontrado = false;
-                                for (const dia of config.diasMes.sort((a, b) => a - b)) {
+                        case 'mensual': {
+                            if (config.diasMes && config.diasMes.length > 0) {
+                                const diasOrdenados = [...config.diasMes].sort((a, b) => a - b);
+                                
+                                // Verificar días en el mes actual
+                                for (const dia of diasOrdenados) {
                                     const fechaPrueba = fecha.clone().date(dia);
                                     if (fechaPrueba.isAfter(ahora)) {
-                                        fecha = fechaPrueba;
-                                        diaEncontrado = true;
-                                        break;
+                                        fechasCandidatas.push(fechaPrueba);
                                     }
                                 }
-                                if (!diaEncontrado) {
-                                    fecha.add(1, 'month').date(config.diasMes[0]);
+                                
+                                // Si no hay fechas válidas en el mes actual, verificar el próximo mes
+                                if (fechasCandidatas.length === 0) {
+                                    const fechaProximoMes = fecha.clone().add(1, 'month').startOf('month');
+                                    for (const dia of diasOrdenados) {
+                                        fechasCandidatas.push(fechaProximoMes.clone().date(dia));
+                                    }
                                 }
                             }
                             break;
+                        }
 
-                        case 'mensual-posicion':
-                            // Implementar lógica para mensual-posicion si es necesario
+                        case 'test': {
+                            fechasCandidatas.push(moment(ahora).add(1, 'minute'));
                             break;
+                        }
 
-                        case 'test':
-                            fecha = moment(ahora).add(1, 'minute');
+                        default: {
+                            fechasCandidatas.push(fecha);
                             break;
+                        }
                     }
 
-                    console.log(`[Schedule] Próxima ejecución calculada: ${fecha.format('YYYY-MM-DD HH:mm:ss')}`);
-                    return fecha.toDate();
+                    // Encontrar la fecha más cercana entre las candidatas
+                    for (const fechaCandidata of fechasCandidatas) {
+                        if (!proximaEjecucionGlobal || fechaCandidata.isBefore(proximaEjecucionGlobal)) {
+                            proximaEjecucionGlobal = fechaCandidata;
+                        }
+                    }
                 }
             }
 
-            console.log(`[Schedule] No se encontró configuración válida`);
-            return null;
+            return proximaEjecucionGlobal?.toDate();
         } catch (error) {
             console.error('[Schedule] Error calculando próxima ejecución:', error);
             return null;
