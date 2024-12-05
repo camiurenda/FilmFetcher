@@ -278,6 +278,15 @@ router.put('/:id', async (req, res) => {
           configuraciones: schedule.configuraciones
         });
       }
+      if (scheduleData.scrapingInmediato) {
+        console.log(`Iniciando scraping inmediato para el sitio ${updatedSite.nombre}`);
+        try {
+            await ScrapingService.ejecutarScrapingInmediato(updatedSite._id);
+            console.log(`Scraping inmediato completado para ${updatedSite.nombre}`);
+        } catch (error) {
+            console.error(`Error en scraping inmediato para ${updatedSite.nombre}:`, error);
+        }
+    }
     }
 
     res.status(200).json(updatedSite);

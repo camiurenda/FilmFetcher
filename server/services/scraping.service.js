@@ -1,5 +1,6 @@
 const axios = require('axios');
 const OpenAI = require('openai');
+const cheerio = require('cheerio');
 const Site = require('../models/site.model');
 const Projection = require('../models/projection.model');
 const ScrapingHistory = require('../models/scrapingHistory.model');
@@ -14,6 +15,30 @@ class ScrapingService {
     constructor() {
         this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
         this.peliculasDetallesCache = new Map();
+    }
+
+    extractBasicInfo(htmlContent) {
+        const $ = cheerio.load(htmlContent);
+        let extractedText = '';
+
+        $('body').find('*').each((index, element) => {
+            if ($(element).is('script, style, meta, link')) return;
+
+            const text = $(element).clone().children().remove().end().text().trim();
+            if (text) {
+                extractedText += `${text}\n`;
+            }
+
+            if ($(element).is('img')) {
+                const alt = $(element).attr('alt');
+                const src = $(element).attr('src');
+                if (alt || src) {
+                    extractedText += `Imagen: ${alt || 'Sin descripción'} (${src})\n`;
+                }
+            }
+        });
+
+        return extractedText.trim();
     }
 
     async obtenerDetallesPelicula(nombrePelicula) {
@@ -165,8 +190,13 @@ class ScrapingService {
             const htmlContent = scrapeResponse.data.data;
             console.log('📝 [FilmFetcher] HTML recibido, longitud:', htmlContent.length);
 
+            // Usar cheerio para extraer texto limpio
+            console.log('🧹 [FilmFetcher] Extrayendo texto con Cheerio...');
+            const extractedText = this.extractBasicInfo(htmlContent);
+            console.log('📄 [FilmFetcher] Texto extraído, longitud:', extractedText.length);
+
             console.log('🧠 [FilmFetcher] Procesando con OpenAI...');
-            const openAIResponse = await this.openAIScrape(site, htmlContent);
+            const openAIResponse = await this.openAIScrape(site, extractedText);
             respuestaOpenAI = JSON.stringify(openAIResponse);
             
             console.log('🎯 [FilmFetcher] Respuesta de OpenAI recibida');
@@ -230,7 +260,12 @@ class ScrapingService {
         - Todo el contenido en PROPERCASE`;
 
         try {
-            console.log(`[Scraping Service] Enviando solicitud a OpenAI (${extractedInfo.length} caracteres)`);
+            const fullPrompt = prompt + "\n\nContenido:\n" + extractedInfo;
+            console.log('\n📤 [OpenAI] Enviando consulta a OpenAI:');
+            console.log('='.repeat(50));
+            console.log(fullPrompt);
+            console.log('='.repeat(50));
+
             const response = await this.openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 messages: [
@@ -240,7 +275,7 @@ class ScrapingService {
                     },
                     {
                         role: "user",
-                        content: prompt + "\n\nContenido:\n" + extractedInfo
+                        content: fullPrompt
                     }
                 ],
                 temperature: 0.2,
