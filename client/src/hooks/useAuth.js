@@ -1,8 +1,6 @@
 import { useAuth0 } from '@auth0/auth0-react';
 import { useState, useEffect } from 'react';
 
-require('dotenv').config();
-
 const whitelistedEmails = [
   'urendacamila@gmail.com',
   //'urendacamila@hotmail.com',
@@ -23,7 +21,7 @@ export const useAuth = () => {
   
   const handleLogout = () => {
     const redirectUri = process.env.REACT_APP_AUTH0_REDIRECT_URI || 'http://localhost:3000';
-    console.log(redirectUri)
+    console.log('Redirigiendo a:', redirectUri);
     logout({ returnTo: `${redirectUri}/callback` });
   };
 
