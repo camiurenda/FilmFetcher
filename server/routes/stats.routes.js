@@ -15,6 +15,32 @@ router.get('/', async (req, res) => {
         const funcionesScrapeadas = await Projection.countDocuments({ habilitado: true });
         console.log('Funciones scrapeadas:', funcionesScrapeadas);
 
+        const peliculasArgentinas = await Projection.countDocuments({
+            habilitado: true,
+            esPeliculaArgentina: true
+        });
+        console.log('Películas argentinas:', peliculasArgentinas);
+
+        // Película con más funciones
+        const peliculasAgrupadas = await Projection.aggregate([
+            { $match: { habilitado: true } },
+            {
+                $group: {
+                    _id: '$nombrePelicula',
+                    totalFunciones: { $sum: 1 }
+                }
+            },
+            { $sort: { totalFunciones: -1 } },
+            { $limit: 1 }
+        ]);
+
+        const peliculaTopFunciones = peliculasAgrupadas.length > 0 
+            ? `${peliculasAgrupadas[0]._id} (${peliculasAgrupadas[0].totalFunciones} funciones)`
+            : 'No hay datos';
+
+        console.log('Película con más funciones:', peliculaTopFunciones);
+
+
         // Obtener el próximo scraping programado
         const schedules = await scheduleService.obtenerEstadoSchedules();
         const ahora = new Date();
@@ -69,7 +95,9 @@ router.get('/', async (req, res) => {
                 ? `${ultimoScrapingExitoso.siteId.nombre} (${new Date(ultimoScrapingExitoso.fechaScraping).toLocaleString()})`
                 : 'N/A',
             tasaExitoScraping,
-            sitioMasActivo: sitioMasActivoNombre
+            sitioMasActivo: sitioMasActivoNombre,
+            peliculasArgentinas,
+            peliculaTopFunciones
         });
 
         console.log('Estadísticas enviadas con éxito');

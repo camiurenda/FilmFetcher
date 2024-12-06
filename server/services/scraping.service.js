@@ -77,13 +77,25 @@ class ScrapingService {
                     .map(actor => actor.name)
                     .join(', ');
 
+                let paisOrigen = 'No especificado';
+                let esPeliculaArgentina = false;
+
+                if (detalles.data.production_countries && detalles.data.production_countries.length > 0) {
+                    paisOrigen = detalles.data.production_countries[0].iso_3166_1;
+                    esPeliculaArgentina = paisOrigen === 'AR';
+
+                    console.log(`🎬 [TMDB] País de origen para ${nombrePelicula}: ${paisOrigen} (Argentina: ${esPeliculaArgentina ? 'Sí' : 'No'})`);
+                }
+
                 const detallesPelicula = {
                     titulo: detalles.data.title,
                     sinopsis: detalles.data.overview,
                     generos: detalles.data.genres.map(g => g.name).join(', '),
                     actores: actoresPrincipales,
                     duracion: detalles.data.runtime || 0,
-                    puntuacion: detalles.data.vote_average.toFixed(1)
+                    puntuacion: detalles.data.vote_average.toFixed(1),
+                    paisOrigen,
+                    esPeliculaArgentina
                 };
 
                 this.peliculasDetallesCache.set(nombrePelicula, detallesPelicula);
@@ -325,14 +337,16 @@ class ScrapingService {
                 const detallesTMDB = await this.obtenerDetallesPelicula(nombrePelicula);
                 
                 const proyeccion = {
-                    nombrePelicula,
-                    fechaHora,
+                    nombrePelicula: detallesTMDB?.titulo || nombrePelicula,
+                    fechaHora: p.fechaHora,
                     director: detallesTMDB?.director || p.director || p.Director || 'No especificado',
                     genero: detallesTMDB?.generos || p.genero || p.Genero || 'No especificado',
                     duracion: detallesTMDB?.duracion || parseInt(p.duracion || p.Duracion) || 0,
                     sala: p.sala || p.Sala || 'No especificada',
-                    precio: parseFloat(p.precio || p.Precio) || 0,
-                    sitio: siteId
+                    precio: precio,
+                    sitio: sitioId,
+                    paisOrigen: detallesTMDB?.paisOrigen || 'No especificado',
+                    esPeliculaArgentina: detallesTMDB?.esPeliculaArgentina || false
                 };
 
                 console.log(`✅ Proyección procesada: ${nombrePelicula} - ${fechaHora.toISOString()}`);

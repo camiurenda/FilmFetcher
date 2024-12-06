@@ -54,9 +54,16 @@ const ProjectionSchema = new mongoose.Schema({
     type: String,
     unique: true,
     required: true,
+  },
+  paisOrigen: {
+    type: String,
+    default: 'No especificado'
+  },
+  esPeliculaArgentina: {
+    type: Boolean,
+    default: false
   }
 });
-
 ProjectionSchema.index({ nombrePelicula: 1, fechaHora: 1, sitio: 1 }, { unique: true });
 
 ProjectionSchema.methods.generarClaveUnica = function() {

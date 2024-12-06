@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Table, Space, Typography, Button, Modal, message, Form, Input, DatePicker, InputNumber, Select, Flex, Row, Col } from 'antd';
+import { Table, Tag, Space, Typography, Button, Modal, message, Form, Input, DatePicker, InputNumber, Select, Flex, Row, Col } from 'antd';
 import { PoweroffOutlined, SearchOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
@@ -27,6 +27,7 @@ const ViewProjections = () => {
   const [isResultModalVisible, setIsResultModalVisible] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [filterType, setFilterType] = useState('nombrePelicula');
+  const [mostrarSoloArgentinas, setMostrarSoloArgentinas] = useState(false);
 
   const fetchProjections = useCallback(async () => {
     try {
@@ -59,6 +60,20 @@ const ViewProjections = () => {
     });
     
     setFilteredProjections(filtered);
+  };
+
+  const handleToggleArgentinas = () => {
+    setMostrarSoloArgentinas(!mostrarSoloArgentinas);
+    if (mostrarSoloArgentinas) {
+      // Quitar filtro
+      setFilterType('nombrePelicula');
+      setSearchText('');
+      setFilteredProjections(projections);
+    } else {
+      // Aplicar filtro
+      const argentinas = projections.filter(p => p.esPeliculaArgentina);
+      setFilteredProjections(argentinas);
+    }
   };
 
   const handleFilterTypeChange = (value) => {
@@ -212,7 +227,7 @@ const ViewProjections = () => {
     {
       title: 'Película',
       dataIndex: 'nombrePelicula',
-      key: 'nombrePelicula',
+      key: 'nombrePelicula',     
     },
     {
       title: 'Fecha y Hora',
@@ -224,6 +239,17 @@ const ViewProjections = () => {
       title: 'Director',
       dataIndex: 'director',
       key: 'director',
+    },
+    {
+      title: 'País',
+      key: 'paisOrigen',
+      render: (_, record) => (
+        record.esPeliculaArgentina ? (
+          <Tag color="blue">Argentina 🧉</Tag>
+        ) : (
+          <span>{record.paisOrigen || 'No especificado'}</span>
+        )
+      ),
     },
     {
       title: 'Duración',
@@ -294,6 +320,7 @@ const ViewProjections = () => {
           <Select.Option value="genero">Género</Select.Option>
           <Select.Option value="director">Director</Select.Option>
           <Select.Option value="nombreCine">Cine</Select.Option>
+          <Select.Option value="paisOrigen">País</Select.Option>
         </Select>
       </Col>
       <Col xs={24} sm={16} md={18}>
@@ -316,11 +343,17 @@ const ViewProjections = () => {
     gap: '10px',
     flexWrap: 'nowrap'
   }}>
-    <Button
+<Button
       type="primary"
       onClick={() => setMostrarAnteriores(!mostrarAnteriores)}
     >
       {mostrarAnteriores ? 'Ver Proyecciones Actuales' : 'Ver Proyecciones Anteriores'}
+    </Button>
+    <Button
+      type={mostrarSoloArgentinas ? "default" : "primary"}
+      onClick={handleToggleArgentinas}
+    >
+      {mostrarSoloArgentinas ? 'Ver Todas' : 'Cine Argentino 🧉'}
     </Button>
     <Button type="primary" onClick={showAddModal}>
       Agregar
@@ -333,7 +366,6 @@ const ViewProjections = () => {
     </Button>
   </div>
 </div>
-
         <Table
           columns={columns}
           dataSource={filteredProjections}

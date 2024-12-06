@@ -63,6 +63,16 @@ const DashboardStats = () => {
       icon: <ProjectOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     },
     {
+      title: 'Películas Argentinas',
+      value: stats.peliculasArgentinas,
+      icon: <CrownOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+    },
+    {
+      title: 'Película Más Programada',
+      value: stats.peliculaTopFunciones,
+      icon: <CheckCircleOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+    },
+    {
       title: 'Próximo Scraping',
       value: stats.proximoScraping,
       icon: <ClockCircleOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
