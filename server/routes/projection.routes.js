@@ -6,6 +6,7 @@ const PDFScrapingService = require('../services/pdfscraping.service');
 const Site = require('../models/site.model');
 const router = express.Router();
 const { Parser } = require('json2csv');
+const moment = require('moment');
 
 // Crear una nueva proyección
 router.post('/add', async (req, res) => {
@@ -225,27 +226,69 @@ router.get('/exportar-csv', async (req, res) => {
       projections = await Projection.find({
         fechaHora: { $gte: fechaActual },
         habilitado: true
-      }).populate('sitio', 'nombre');
+      }).populate('sitio');
     } else {
-      projections = await Projection.find({ habilitado: true }).populate('sitio', 'nombre');
+      projections = await Projection.find({ 
+        habilitado: true 
+      }).populate('sitio');
     }
 
-    const fields = ['nombrePelicula', 'fechaHora', 'director', 'genero', 'duracion', 'sala', 'precio', 'nombreCine'];
-    const opts = { fields };
-    const parser = new Parser(opts);
+    const fields = [
+      {
+        label: 'DÍA',
+        value: row => moment(row.fechaHora).format('DD/MM/YYYY')
+      },
+      {
+        label: 'HORA',
+        value: row => moment(row.fechaHora).format('HH:mm')
+      },
+      {
+        label: 'PELÍCULA',
+        value: 'nombrePelicula'
+      },
+      {
+        label: 'DIRECTOR',
+        value: row => row.director || 'No especificado'
+      },
+      {
+        label: 'SALA',
+        value: row => `${row.sitio?.url || ''} || ${row.nombreCine || 'No especificado'}`
+      },
+      {
+        label: 'DIRECCIÓN',
+        value: row => row.sitio?.direccion || 'No especificada'
+      },
+      {
+        label: 'PRECIO',
+        value: row => row.precio ? `$${row.precio.toFixed(2)}` : 'No especificado'
+      },
+      {
+        label: 'FILTROS',
+        value: row => row.esPeliculaArgentina ? 'Cine Argentino' : ''
+      }
+    ];
 
-    const csv = parser.parse(projections.map(p => ({
-      ...p.toObject(),
-      nombreCine: p.nombreCine || (p.sitio && p.sitio.nombre) || 'No especificado',
-      fechaHora: p.fechaHora.toLocaleString()
-    })));
+    const opts = { 
+      fields,
+      delimiter: ',',
+      header: true
+    };
+
+    const parser = new Parser(opts);
+    const csv = parser.parse(projections);
 
     res.header('Content-Type', 'text/csv');
     res.attachment(`cartelera_${tipo === 'actual' ? 'actual' : 'completa'}.csv`);
     res.send(csv);
+    
+    console.log(`CSV exportado exitosamente - ${projections.length} proyecciones`);
+
   } catch (error) {
     console.error('Error al exportar a CSV:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ 
+      message: 'Error al exportar cartelera a CSV',
+      error: error.message 
+    });
   }
 });
 

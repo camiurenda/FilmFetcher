@@ -178,24 +178,34 @@ const ViewProjections = () => {
     }
   };
 
-  const handleExportCSV = (tipo) => {
-    axios.get(`${API_URL}/api/projections/exportar-csv?tipo=${tipo}`, {
-      responseType: 'blob',
-    })
-      .then((response) => {
-        const url = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `cartelera_${tipo}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      })
-      .catch((error) => {
-        console.error('Error al exportar CSV:', error);
-        message.error('Error al exportar la cartelera a CSV');
-      });
+  const handleExportCSV = async (tipo) => {
+    try {
+      const response = await axios.get(
+        `${API_URL}/api/projections/exportar-csv?tipo=${tipo}`,
+        {
+          responseType: 'blob'
+        }
+      );
+
+      // Crear nombre de archivo dinámico
+      const fileName = `cartelera_${tipo}_${moment().format('YYYY-MM-DD')}.csv`;
+
+      // Crear y descargar el archivo
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      message.success('Cartelera exportada exitosamente');
+    } catch (error) {
+      console.error('Error al exportar CSV:', error);
+      message.error('Error al exportar la cartelera a CSV');
+    }
   };
+
 
   const showExportModal = () => {
     confirm({
