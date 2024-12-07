@@ -3,6 +3,7 @@ import { Table, Checkbox, Tag, Space, Typography, Button, Modal, message, Form, 
 import { PoweroffOutlined, SearchOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
+import ScrapingProgressModal from '../../components/Scrap/ScrapingProgressModal';
 import moment from 'moment';
 import AddProjectionModal from './addProjections';
 import API_URL from '../../config/api';
@@ -28,6 +29,13 @@ const ViewProjections = () => {
   const [searchText, setSearchText] = useState('');
   const [filterType, setFilterType] = useState('nombrePelicula');
   const [mostrarSoloArgentinas, setMostrarSoloArgentinas] = useState(false);
+  const [scrapingProgress, setScrapingProgress] = useState({
+    visible: false,
+    currentStep: 0,
+    status: {},
+    error: null,
+    stats: { total: 0, processed: 0 }
+  });
 
   const fetchProjections = useCallback(async () => {
     try {
@@ -58,7 +66,7 @@ const ViewProjections = () => {
       const fieldValue = String(projection[filterType] || '').toLowerCase();
       return fieldValue.includes(searchLower);
     });
-    
+
     setFilteredProjections(filtered);
   };
 
@@ -105,20 +113,109 @@ const ViewProjections = () => {
   };
 
   const handleManualLoad = async (values) => {
+    console.log('Iniciando proceso de carga manual');
     setLoading(true);
+    
+    // Primero cerramos el modal de carga manual
+    setIsManualLoadModalVisible(false);
+    
+    // Iniciamos el modal de progreso
+    setScrapingProgress({
+      visible: true,
+      currentStep: 0,
+      status: {
+        initialization: { detail: 'Validando archivo y sitio...' }
+      },
+      error: null,
+      stats: { total: 0, processed: 0 }
+    });
+
     try {
+      // Paso 1: Inicialización
+      await new Promise(resolve => setTimeout(resolve, 500));
+      setScrapingProgress(prev => ({
+        ...prev,
+        currentStep: 1,
+        status: {
+          ...prev.status,
+          extraction: { detail: 'Extrayendo contenido del PDF...' }
+        }
+      }));
+
+      // Paso 2: Extracción y envío al servidor
       const response = await axios.post(`${API_URL}/api/projections/load-from-file`, {
         fileUrl: values.fileUrl,
         sitioId: values.sitioId,
         fileType: values.fileType
       });
+
+      // Paso 3: Procesamiento IA
+      setScrapingProgress(prev => ({
+        ...prev,
+        currentStep: 2,
+        status: {
+          ...prev.status,
+          aiProcessing: { detail: 'Analizando contenido con OpenAI...' }
+        }
+      }));
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Paso 4: Enriquecimiento
+      setScrapingProgress(prev => ({
+        ...prev,
+        currentStep: 3,
+        status: {
+          ...prev.status,
+          enrichment: { detail: 'Buscando información adicional en TMDB...' }
+        },
+        stats: { total: response.data.length || 0, processed: 0 }
+      }));
+
+      // Simular progreso de procesamiento
+      if (response.data && response.data.length > 0) {
+        for (let i = 0; i < response.data.length; i++) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          setScrapingProgress(prev => ({
+            ...prev,
+            stats: { ...prev.stats, processed: i + 1 }
+          }));
+        }
+      }
+
+      // Paso 5: Almacenamiento
+      setScrapingProgress(prev => ({
+        ...prev,
+        currentStep: 4,
+        status: {
+          ...prev.status,
+          storage: { detail: 'Guardando proyecciones en la base de datos...' }
+        }
+      }));
+
       setScrapedProjections(response.data);
-      setIsManualLoadModalVisible(false);
+      
+      // Esperar un momento antes de cerrar el modal de progreso
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Cerramos el modal de progreso
+      setScrapingProgress(prev => ({ ...prev, visible: false }));
+      
+      // Mostramos el modal de resultados
+      await new Promise(resolve => setTimeout(resolve, 100)); // Pequeña pausa para evitar superposición
       setIsResultModalVisible(true);
+      
       message.success('Proyecciones cargadas correctamente desde el archivo');
+
     } catch (error) {
       console.error('Error al cargar proyecciones desde archivo:', error);
+      setScrapingProgress(prev => ({
+        ...prev,
+        error: error.response?.data?.message || error.message || 'Error al procesar el archivo'
+      }));
       message.error('Error al cargar proyecciones desde el archivo');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -208,7 +305,7 @@ const ViewProjections = () => {
     Modal.confirm({
       icon: null, // Removemos el ícono de exclamación
       title: (
-        <div style={{ 
+        <div style={{
           color: '#ffffff',
           fontSize: '16px',
           fontWeight: 500,
@@ -218,7 +315,7 @@ const ViewProjections = () => {
         </div>
       ),
       content: (
-        <div style={{ 
+        <div style={{
           color: '#8c8c8c',
           fontSize: '14px'
         }}>
@@ -237,7 +334,7 @@ const ViewProjections = () => {
           gap: '8px',
           marginTop: '24px'
         }}>
-          <Button 
+          <Button
             onClick={() => Modal.destroyAll()}
             style={{
               background: 'transparent',
@@ -299,7 +396,7 @@ const ViewProjections = () => {
     {
       title: 'Película',
       dataIndex: 'nombrePelicula',
-      key: 'nombrePelicula',     
+      key: 'nombrePelicula',
     },
     {
       title: 'Fecha y Hora',
@@ -371,73 +468,73 @@ const ViewProjections = () => {
     <AuthWrapper>
       <div style={{ padding: '24px', background: '#141414', borderRadius: '8px', overflow: 'auto' }}>
         <Title level={2} style={{ color: '#fff', marginBottom: '24px' }}>Cartelera</Title>
-        
-        <div style={{
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: '20px',
-  gap: '16px'
-}}>
-  {/* Contenedor del buscador */}
-  <div style={{ flex: '1' }}>
-    <Row gutter={[16, 16]}>
-      <Col xs={24} sm={8} md={6}>
-        <Select
-          value={filterType}
-          onChange={handleFilterTypeChange}
-          style={{ width: '100%' }}
-        >
-          <Select.Option value="nombrePelicula">Película</Select.Option>
-          <Select.Option value="genero">Género</Select.Option>
-          <Select.Option value="director">Director</Select.Option>
-          <Select.Option value="nombreCine">Cine</Select.Option>
-          <Select.Option value="paisOrigen">País</Select.Option>
-        </Select>
-      </Col>
-      <Col xs={24} sm={16} md={18}>
-        <Search
-          placeholder={`Buscar por ${filterType === 'nombrePelicula' ? 'película' : 
-                      filterType === 'genero' ? 'género' : 
-                      filterType === 'director' ? 'director' : 'cine'}`}
-          value={searchText}
-          onChange={e => handleSearch(e.target.value)}
-          style={{ width: '100%' }}
-          allowClear
-        />
-      </Col>
-    </Row>
-  </div>
 
-  {/* Contenedor de botones */}
-  <div style={{
-    display: 'flex',
-    gap: '10px',
-    flexWrap: 'nowrap'
-  }}>
-<Button
-      type="primary"
-      onClick={() => setMostrarAnteriores(!mostrarAnteriores)}
-    >
-      {mostrarAnteriores ? 'Ver Proyecciones Actuales' : 'Ver Proyecciones Anteriores'}
-    </Button>
-    <Button
-      type={mostrarSoloArgentinas ? "default" : "primary"}
-      onClick={handleToggleArgentinas}
-    >
-      {mostrarSoloArgentinas ? 'Ver Todas' : 'Cine Argentino 🧉'}
-    </Button>
-    <Button type="primary" onClick={showAddModal}>
-      Agregar
-    </Button>
-    <Button type="primary" onClick={showManualLoadModal}>
-      Carga Manual desde Archivo
-    </Button>
-    <Button type="primary" onClick={showExportModal}>
-      Exportar a CSV
-    </Button>
-  </div>
-</div>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '20px',
+          gap: '16px'
+        }}>
+          {/* Contenedor del buscador */}
+          <div style={{ flex: '1' }}>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} sm={8} md={6}>
+                <Select
+                  value={filterType}
+                  onChange={handleFilterTypeChange}
+                  style={{ width: '100%' }}
+                >
+                  <Select.Option value="nombrePelicula">Película</Select.Option>
+                  <Select.Option value="genero">Género</Select.Option>
+                  <Select.Option value="director">Director</Select.Option>
+                  <Select.Option value="nombreCine">Cine</Select.Option>
+                  <Select.Option value="paisOrigen">País</Select.Option>
+                </Select>
+              </Col>
+              <Col xs={24} sm={16} md={18}>
+                <Search
+                  placeholder={`Buscar por ${filterType === 'nombrePelicula' ? 'película' :
+                    filterType === 'genero' ? 'género' :
+                      filterType === 'director' ? 'director' : 'cine'}`}
+                  value={searchText}
+                  onChange={e => handleSearch(e.target.value)}
+                  style={{ width: '100%' }}
+                  allowClear
+                />
+              </Col>
+            </Row>
+          </div>
+
+          {/* Contenedor de botones */}
+          <div style={{
+            display: 'flex',
+            gap: '10px',
+            flexWrap: 'nowrap'
+          }}>
+            <Button
+              type="primary"
+              onClick={() => setMostrarAnteriores(!mostrarAnteriores)}
+            >
+              {mostrarAnteriores ? 'Ver Proyecciones Actuales' : 'Ver Proyecciones Anteriores'}
+            </Button>
+            <Button
+              type={mostrarSoloArgentinas ? "default" : "primary"}
+              onClick={handleToggleArgentinas}
+            >
+              {mostrarSoloArgentinas ? 'Ver Todas' : 'Cine Argentino 🧉'}
+            </Button>
+            <Button type="primary" onClick={showAddModal}>
+              Agregar
+            </Button>
+            <Button type="primary" onClick={showManualLoadModal}>
+              Carga Manual desde Archivo
+            </Button>
+            <Button type="primary" onClick={showExportModal}>
+              Exportar a CSV
+            </Button>
+          </div>
+        </div>
         <Table
           columns={columns}
           dataSource={filteredProjections}
@@ -564,6 +661,14 @@ const ViewProjections = () => {
             </Form.Item>
           </Form>
         </Modal>
+        <ScrapingProgressModal
+          visible={scrapingProgress.visible}
+          onCancel={() => setScrapingProgress(prev => ({ ...prev, visible: false }))}
+          currentStep={scrapingProgress.currentStep}
+          status={scrapingProgress.status}
+          error={scrapingProgress.error}
+          stats={scrapingProgress.stats}
+        />
         <Modal
           title="Resultados del Scraping"
           open={isResultModalVisible}
