@@ -5,3 +5,35 @@ html, body {
     margin: 0;
     
     }
+    .dark-theme-modal .ant-modal-content {
+        background: #1f1f1f !important;
+        box-shadow: none !important;
+        padding: 0;
+      }
+      
+      .dark-theme-modal .ant-modal-body {
+        padding: 24px;
+      }
+      
+      .dark-theme-modal .ant-modal-confirm-content {
+        max-width: none;
+        margin-inline-start: 0 !important;
+      }
+      
+      .dark-theme-modal .ant-modal-confirm-btns {
+        display: none;
+      }
+      
+      .dark-theme-modal .ant-btn:hover {
+        opacity: 0.85;
+        transition: opacity 0.2s;
+      }
+      
+      .dark-theme-modal .ant-modal-close {
+        color: #8c8c8c;
+        transition: color 0.2s;
+      }
+      
+      .dark-theme-modal .ant-modal-close:hover {
+        color: #fff;
+      }

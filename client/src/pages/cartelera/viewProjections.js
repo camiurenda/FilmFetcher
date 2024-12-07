@@ -187,10 +187,7 @@ const ViewProjections = () => {
         }
       );
 
-      // Crear nombre de archivo dinámico
       const fileName = `cartelera_${tipo}_${moment().format('YYYY-MM-DD')}.csv`;
-
-      // Crear y descargar el archivo
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -208,28 +205,93 @@ const ViewProjections = () => {
 
 
   const showExportModal = () => {
-    confirm({
-      title: '¿Qué tipo de exportación deseas realizar?',
-      content: 'Puedes exportar solo las proyecciones actuales o todas las proyecciones.',
-      okText: 'Exportar Actual',
-      cancelText: 'Exportar Todo',
-      onOk() {
-        handleExportCSV('actual');
-      },
-      onCancel() {
-        handleExportCSV('completo');
-      },
-      cancelButtonProps: { style: { display: 'inline-block' } },
-      okButtonProps: { style: { display: 'inline-block' } },
+    Modal.confirm({
+      icon: null, // Removemos el ícono de exclamación
+      title: (
+        <div style={{ 
+          color: '#ffffff',
+          fontSize: '16px',
+          fontWeight: 500,
+          marginBottom: '8px'
+        }}>
+          ¿Qué tipo de exportación deseas realizar?
+        </div>
+      ),
+      content: (
+        <div style={{ 
+          color: '#8c8c8c',
+          fontSize: '14px'
+        }}>
+          Puedes exportar solo las proyecciones actuales o todas las proyecciones.
+        </div>
+      ),
+      width: 480,
+      className: 'dark-theme-modal',
+      centered: true,
       closable: true,
       maskClosable: true,
-      footer: (_, { OkBtn, CancelBtn }) => (
-        <>
-          <Button onClick={() => Modal.destroyAll()}>Cerrar</Button>
-          <OkBtn />
-          <CancelBtn />
-        </>
+      footer: (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: '8px',
+          marginTop: '24px'
+        }}>
+          <Button 
+            onClick={() => Modal.destroyAll()}
+            style={{
+              background: 'transparent',
+              border: '1px solid #434343',
+              color: '#8c8c8c'
+            }}
+          >
+            Cerrar
+          </Button>
+          <Button
+            type="primary"
+            onClick={() => {
+              Modal.destroyAll();
+              handleExportCSV('actual');
+            }}
+            style={{
+              background: '#1890ff',
+              borderColor: '#1890ff'
+            }}
+          >
+            Exportar Actual
+          </Button>
+          <Button
+            onClick={() => {
+              Modal.destroyAll();
+              handleExportCSV('completo');
+            }}
+            style={{
+              background: '#141414',
+              border: '1px solid #1890ff',
+              color: '#1890ff'
+            }}
+          >
+            Exportar Todo
+          </Button>
+        </div>
       ),
+      modalRender: (modal) => (
+        <div style={{
+          backgroundColor: '#1f1f1f',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          overflow: 'hidden'
+        }}>
+          {modal}
+        </div>
+      ),
+      bodyStyle: {
+        background: '#1f1f1f',
+        padding: '24px'
+      },
+      onCancel: () => {
+        Modal.destroyAll();
+      }
     });
   };
 

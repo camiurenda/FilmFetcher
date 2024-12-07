@@ -5,11 +5,82 @@ const Projection = require('../models/projection.model');
 const ScrapingHistory = require('../models/scrapingHistory.model');
 require('dotenv').config();
 
+const TMDB_API_KEY = process.env.TMDB_API_KEY;
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+
 class PDFScrapingService {
   constructor() {
     this.openaiApiKey = process.env.OPENAI_API_KEY;
     this.MAX_RETRIES = 3;
     this.INITIAL_RETRY_DELAY = 1000;
+    this.peliculasDetallesCache = new Map();
+  }
+
+  async obtenerDetallesPelicula(nombrePelicula) {
+    if (this.peliculasDetallesCache.has(nombrePelicula)) {
+      return this.peliculasDetallesCache.get(nombrePelicula);
+    }
+
+    try {
+      console.log(`🎬 [TMDB] Buscando detalles para: ${nombrePelicula}`);
+      const searchResponse = await axios.get(`${TMDB_BASE_URL}/search/movie`, {
+        params: {
+          api_key: TMDB_API_KEY,
+          query: nombrePelicula,
+          language: 'es-ES'
+        }
+      });
+
+      if (searchResponse.data.results.length > 0) {
+        const peliculaId = searchResponse.data.results[0].id;
+        const [detalles, creditos] = await Promise.all([
+          axios.get(`${TMDB_BASE_URL}/movie/${peliculaId}`, {
+            params: {
+              api_key: TMDB_API_KEY,
+              language: 'es-ES'
+            }
+          }),
+          axios.get(`${TMDB_BASE_URL}/movie/${peliculaId}/credits`, {
+            params: {
+              api_key: TMDB_API_KEY
+            }
+          })
+        ]);
+
+        const actoresPrincipales = creditos.data.cast
+          .slice(0, 3)
+          .map(actor => actor.name)
+          .join(', ');
+
+        let paisOrigen = 'No especificado';
+        let esPeliculaArgentina = false;
+
+        if (detalles.data.production_countries && detalles.data.production_countries.length > 0) {
+          paisOrigen = detalles.data.production_countries[0].iso_3166_1;
+          esPeliculaArgentina = paisOrigen === 'AR';
+          console.log(`🎬 [TMDB] País de origen para ${nombrePelicula}: ${paisOrigen} (Argentina: ${esPeliculaArgentina ? 'Sí' : 'No'})`);
+        }
+
+        const detallesPelicula = {
+          titulo: detalles.data.title,
+          sinopsis: detalles.data.overview,
+          generos: detalles.data.genres.map(g => g.name).join(', '),
+          actores: actoresPrincipales,
+          duracion: detalles.data.runtime || 0,
+          puntuacion: detalles.data.vote_average.toFixed(1),
+          paisOrigen,
+          esPeliculaArgentina
+        };
+
+        this.peliculasDetallesCache.set(nombrePelicula, detallesPelicula);
+        console.log(`✅ [TMDB] Detalles encontrados para: ${nombrePelicula}`);
+        return detallesPelicula;
+      }
+      return null;
+    } catch (error) {
+      console.error(`❌ [TMDB] Error al obtener detalles:`, error);
+      return null;
+    }
   }
 
   async scrapeFromPDF(pdfUrl, sitioId) {
@@ -184,50 +255,72 @@ IMPORTANTE: SOLO JSON VÁLIDO, EN PROPERCASE SIN TEXTO ADICIONAL`;
 
   async processAIResponse(proyecciones, site) {
     console.log(`🔄 [PDF Scraping] Procesando ${proyecciones.length} proyecciones para ${site.nombre}`);
+    const processedProjections = [];
     const currentYear = new Date().getFullYear();
+    const nextYear = currentYear + 1;
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 1000;
 
-    try {
-      const processed = proyecciones
-        .map(p => {
-          try {
-            let fechaHora = new Date(p.fechaHora || p.FechaHora);
+    for (const p of proyecciones) {
+      let retryCount = 0;
+      while (retryCount < MAX_RETRIES) {
+        try {
+          const nombrePelicula = p.nombre || p.Nombre;
+          let fechaHora = new Date(p.fechaHora || p.FechaHora);
 
-            if (isNaN(fechaHora.getTime())) {
-              console.log(`⚠️ [PDF Scraping] Fecha inválida detectada: ${p.fechaHora}`);
-              return null;
-            }
-
-            if (fechaHora.getFullYear() < currentYear) {
-              fechaHora.setFullYear(currentYear);
-            }
-
-            let precio = site.esGratis ? 0 : (parseFloat(p.precio || p.Precio) || site.precioDefault || 0);
-
-            return {
-              nombrePelicula: p.nombre || p.Nombre || 'Sin título',
-              fechaHora: fechaHora,
-              director: p.director || p.Director || 'No especificado',
-              genero: p.genero || p.Genero || 'No especificado',
-              duracion: parseInt(p.duracion || p.Duracion) || 0,
-              sala: p.sala || p.Sala || 'No especificada',
-              precio: precio,
-              sitio: site._id,
-              nombreCine: site.nombre
-            };
-          } catch (error) {
-            console.error(`❌ [PDF Scraping] Error procesando proyección:`, error);
-            return null;
+          if (!nombrePelicula || !fechaHora || isNaN(fechaHora.getTime())) {
+            console.log(`⚠️ Proyección inválida:`, {
+              nombre: nombrePelicula,
+              fecha: p.fechaHora || p.FechaHora
+            });
+            break;
           }
-        })
-        .filter(p => p !== null && p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
 
-      console.log(`✅ [PDF Scraping] ${processed.length} proyecciones procesadas correctamente`);
-      return processed;
-    } catch (error) {
-      console.error('❌ [PDF Scraping] Error al procesar respuesta:', error);
-      throw error;
+          // Ajuste crucial del año
+          if (fechaHora < new Date()) {
+            fechaHora.setFullYear(nextYear);
+            console.log(`🔄 Ajustando año a ${nextYear} para ${nombrePelicula}`);
+          } else {
+            fechaHora.setFullYear(Math.max(fechaHora.getFullYear(), currentYear));
+          }
+
+          const detallesTMDB = await this.obtenerDetallesPelicula(nombrePelicula);
+          let precio = site.esGratis ? 0 : (parseFloat(p.precio || p.Precio) || site.precioDefault || 0);
+
+          const proyeccion = {
+            nombrePelicula: detallesTMDB?.titulo || nombrePelicula,
+            fechaHora: fechaHora,
+            director: detallesTMDB?.director || p.director || p.Director || 'No especificado',
+            genero: detallesTMDB?.generos || p.genero || p.Genero || 'No especificado',
+            duracion: detallesTMDB?.duracion || parseInt(p.duracion || p.Duracion) || 0,
+            sala: p.sala || p.Sala || 'No especificada',
+            precio: precio,
+            paisOrigen: detallesTMDB?.paisOrigen || 'No especificado',
+            esPeliculaArgentina: detallesTMDB?.esPeliculaArgentina || false
+          };
+
+          console.log(`✅ Proyección procesada: ${nombrePelicula} - ${fechaHora.toISOString()}`);
+          processedProjections.push(proyeccion);
+          break;
+
+        } catch (error) {
+          console.error(`❌ Intento ${retryCount + 1}/${MAX_RETRIES} falló para ${p.nombre || p.Nombre}:`, error);
+          retryCount++;
+          
+          if (retryCount < MAX_RETRIES) {
+            console.log(`🔄 Esperando ${RETRY_DELAY}ms antes del siguiente intento...`);
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * retryCount));
+          } else {
+            console.error(`❌ Todos los intentos fallaron para ${p.nombre || p.Nombre}`);
+          }
+        }
+      }
     }
-  }
+
+    console.log(`📊 Total proyecciones procesadas: ${processedProjections.length}`);
+    return processedProjections;
+}
+
 
   preprocessOpenAIResponse(content) {
     try {
