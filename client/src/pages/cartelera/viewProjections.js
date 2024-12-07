@@ -662,6 +662,7 @@ const ViewProjections = () => {
           </Form>
         </Modal>
         <ScrapingProgressModal
+          type="pdf"
           visible={scrapingProgress.visible}
           onCancel={() => setScrapingProgress(prev => ({ ...prev, visible: false }))}
           currentStep={scrapingProgress.currentStep}

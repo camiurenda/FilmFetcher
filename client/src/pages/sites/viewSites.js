@@ -93,25 +93,31 @@ const ViewSite = () => {
 
   const handleSubmit = async (values) => {
     try {
+      let response;
+      
       if (modalMode === 'edit') {
-        await axios.put(`${API_URL}/api/sites/${editingSite._id}`, values);
+        response = await axios.put(`${API_URL}/api/sites/${editingSite._id}`, values);
         message.success('Sitio actualizado correctamente');
       } else {
         if (!user?.email) {
           message.error('Error: Usuario no identificado');
           return;
         }
-        await axios.post(`${API_URL}/api/sites/add`, {
+        response = await axios.post(`${API_URL}/api/sites/add`, {
           ...values,
           usuarioCreador: user.email
         });
         message.success('Sitio agregado correctamente');
       }
-      handleModalClose();
-      fetchSites();
+
+      // Retornamos la respuesta para que siteModal.js pueda acceder al ID
+      return response.data;
     } catch (error) {
       console.error('Error al procesar el sitio:', error);
       message.error('Error al procesar el sitio');
+      throw error;
+    } finally {
+      fetchSites();
     }
   };
 

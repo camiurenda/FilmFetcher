@@ -41,6 +41,21 @@ router.get('/scraping-history', async (req, res) => {
   }
 });
 
+// Ejecutar scraping inmediato
+router.post('/scrape/:id', async (req, res) => {
+  try {
+    console.log('Iniciando scraping inmediato para sitio:', req.params.id);
+    const result = await ScrapingService.ejecutarScrapingInmediato(req.params.id);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error en scraping inmediato:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Error al ejecutar scraping inmediato'
+    });
+  }
+});
+
 router.post('/add', async (req, res) => {
   try {
       console.log('Datos recibidos para nuevo sitio:', req.body);

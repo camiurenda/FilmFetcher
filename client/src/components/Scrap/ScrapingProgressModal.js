@@ -1,8 +1,37 @@
 import React from 'react';
-import { Modal, Steps, Timeline, Progress, Space, Typography, Button } from 'antd';
-import { FileSearchOutlined, CloudUploadOutlined, RobotOutlined, VideoCameraOutlined, SaveOutlined, CheckCircleFilled, LoadingOutlined, CloseCircleFilled} from '@ant-design/icons';
+import { Modal, Steps, Progress, Space, Typography, Button } from 'antd';
+import { 
+  FileSearchOutlined, 
+  CloudUploadOutlined, 
+  RobotOutlined, 
+  VideoCameraOutlined, 
+  SaveOutlined, 
+  CheckCircleFilled, 
+  LoadingOutlined, 
+  CloseCircleFilled,
+  FileImageOutlined,
+  GlobalOutlined
+} from '@ant-design/icons';
 
 const { Text } = Typography;
+
+const STEP_CONFIGS = {
+  'pdf': {
+    icon: FileSearchOutlined,
+    title: 'Inicialización',
+    description: 'Validando PDF y sitio...'
+  },
+  'image': {
+    icon: FileImageOutlined,
+    title: 'Inicialización',
+    description: 'Validando imagen y sitio...'
+  },
+  'scraping': {
+    icon: GlobalOutlined,
+    title: 'Inicialización',
+    description: 'Validando sitio y conexión...'
+  }
+};
 
 const ScrapingProgressModal = ({ 
   visible, 
@@ -10,43 +39,42 @@ const ScrapingProgressModal = ({
   status = {}, 
   currentStep = 0,
   error = null,
-  stats = { total: 0, processed: 0 }
+  stats = { total: 0, processed: 0 },
+  type = 'pdf',
+  onComplete = () => {}
 }) => {
-  const steps = [
-    {
-      title: 'Inicialización',
-      icon: FileSearchOutlined,
-      description: 'Validando PDF y sitio...',
-      status: status.initialization
-    },
-    {
-      title: 'Extracción',
-      icon: CloudUploadOutlined,
-      description: 'Extrayendo contenido del PDF...',
-      status: status.extraction
-    },
-    {
-      title: 'Análisis IA',
-      icon: RobotOutlined,
-      description: 'Procesando con OpenAI...',
-      status: status.aiProcessing
-    },
-    {
-      title: 'Enriquecimiento',
-      icon: VideoCameraOutlined,
-      description: 'Buscando información adicional...',
-      status: status.enrichment
-    },
-    {
-      title: 'Almacenamiento',
-      icon: SaveOutlined,
-      description: 'Guardando proyecciones...',
-      status: status.storage
-    }
-  ];
+
+  const getStepConfig = (index) => {
+    if (index === 0) return STEP_CONFIGS[type];
+    
+    const commonSteps = [
+      {
+        icon: CloudUploadOutlined,
+        title: 'Extracción',
+        description: type === 'scraping' ? 'Extrayendo contenido del sitio...' : `Extrayendo contenido del ${type}...`
+      },
+      {
+        icon: RobotOutlined,
+        title: 'Análisis IA',
+        description: 'Procesando con OpenAI...'
+      },
+      {
+        icon: VideoCameraOutlined,
+        title: 'Enriquecimiento',
+        description: 'Buscando información adicional...'
+      },
+      {
+        icon: SaveOutlined,
+        title: 'Almacenamiento',
+        description: 'Guardando proyecciones...'
+      }
+    ];
+
+    return commonSteps[index - 1];
+  };
 
   const getStepStatus = (index) => {
-    if (error) return 'error';
+    if (error) return index <= currentStep ? 'error' : 'wait';
     if (index === currentStep) return 'process';
     if (index < currentStep) return 'finish';
     return 'wait';
@@ -59,22 +87,40 @@ const ScrapingProgressModal = ({
     return <Icon />;
   };
 
+  const steps = Array(5).fill(null).map((_, index) => getStepConfig(index));
+  React.useEffect(() => {
+    if (currentStep === steps.length && !error) {
+      onComplete();
+    }
+  }, [currentStep, error, onComplete]);
+
+  const handleClose = () => {
+    if (error || currentStep === steps.length) {
+      onCancel();
+    }
+  };
+
   return (
     <Modal
-      title="Progreso del Scraping"
+      title={`Progreso del ${type === 'pdf' ? 'PDF' : type === 'image' ? 'Imagen' : 'Scraping'}`}
       open={visible}
-      onCancel={onCancel}
+      onCancel={handleClose}
       width={600}
       footer={[
-        <Button key="cancel" onClick={onCancel} type="primary" danger>
-          Cancelar Proceso
-        </Button>
+        <Button 
+          key="cancel" 
+          onClick={handleClose} 
+          type="primary" 
+          danger
+        >
+          {error || currentStep === steps.length ? 'Cerrar' : 'Cancelar Proceso'}    
+          </Button>
       ]}
     >
       <Space direction="vertical" size="large" className="w-full">
         <Progress 
           percent={Math.round((currentStep / (steps.length - 1)) * 100)} 
-          status={error ? 'exception' : 'active'}
+          status={error ? 'exception' : currentStep === steps.length ? 'success' : 'active'}
           strokeColor={{
             '0%': '#108ee9',
             '100%': '#87d068',
@@ -95,9 +141,9 @@ const ScrapingProgressModal = ({
                   <Text type={getStepStatus(index) === 'process' ? 'warning' : 'secondary'}>
                     {step.description}
                   </Text>
-                  {step.status?.detail && (
+                  {status[Object.keys(status)[index]]?.detail && (
                     <Text type="secondary" className="text-xs">
-                      {step.status.detail}
+                      {status[Object.keys(status)[index]].detail}
                     </Text>
                   )}
                 </Space>

@@ -83,7 +83,6 @@ class ScrapingService {
                 if (detalles.data.production_countries && detalles.data.production_countries.length > 0) {
                     paisOrigen = detalles.data.production_countries[0].iso_3166_1;
                     esPeliculaArgentina = paisOrigen === 'AR';
-
                     console.log(`🎬 [TMDB] País de origen para ${nombrePelicula}: ${paisOrigen} (Argentina: ${esPeliculaArgentina ? 'Sí' : 'No'})`);
                 }
 
@@ -142,14 +141,14 @@ class ScrapingService {
         try {
             console.log(`🔄 [FilmFetcher] Ejecutando scraping inmediato para sitio ${siteId}`);
             const site = await Site.findById(siteId);
-            
+
             if (!site) {
                 throw new Error('Sitio no encontrado');
             }
 
             console.log(`📌 [FilmFetcher] Iniciando scraping para ${site.nombre}`);
             const resultado = await this.scrapeSite(site);
-            
+
             console.log(`✅ [FilmFetcher] Scraping inmediato completado para ${site.nombre}`);
             return resultado;
         } catch (error) {
@@ -173,7 +172,7 @@ class ScrapingService {
             const scrapeResponse = await axios.post(
                 `${SCRAPING_SERVICE_URL}/api/scrape`,
                 { url: site.url },
-                { 
+                {
                     timeout: 60000,
                     headers: {
                         'X-Source': 'FilmFetcher',
@@ -210,7 +209,7 @@ class ScrapingService {
             console.log('🧠 [FilmFetcher] Procesando con OpenAI...');
             const openAIResponse = await this.openAIScrape(site, extractedText);
             respuestaOpenAI = JSON.stringify(openAIResponse);
-            
+
             console.log('🎯 [FilmFetcher] Respuesta de OpenAI recibida');
 
             let proyecciones = openAIResponse.proyecciones || openAIResponse.Proyecciones;
@@ -220,13 +219,14 @@ class ScrapingService {
             }
 
             console.log('🎥 [FilmFetcher] Enriqueciendo datos con TMDB...');
-            const projections = await this.processAIResponse(proyecciones, site._id);
-            
+            const projections = await this.processAIResponse(proyecciones, site);
+
             console.log(`🔍 [FilmFetcher] Verificando ${projections?.length || 0} proyecciones procesadas...`);
             if (!projections || !Array.isArray(projections)) {
                 console.error('❌ [FilmFetcher] Error: projections no es un array válido:', projections);
                 throw new Error('Las proyecciones procesadas no son válidas');
             }
+
             if (projections.length > 0) {
                 console.log(`📥 [FilmFetcher] Insertando proyecciones en la base de datos...`);
                 try {
@@ -256,7 +256,62 @@ class ScrapingService {
             throw error;
         }
     }
+     async processAIResponse(proyecciones, site) {
+        console.log(`🎯 Procesando ${proyecciones.length} proyecciones para sitio ${site._id}`);
+        const processedProjections = [];
 
+        if (!site) {
+            throw new Error('Se requiere el objeto site para procesar las proyecciones');
+        }
+
+        for (const p of proyecciones) {
+            try {
+                const nombrePelicula = p.nombre || p.Nombre;
+                const fechaHora = new Date(p.fechaHora || p.FechaHora);
+
+                if (!nombrePelicula || !fechaHora || isNaN(fechaHora.getTime())) {
+                    console.log(`⚠️ Proyección inválida:`, {
+                        nombre: nombrePelicula,
+                        fecha: p.fechaHora || p.FechaHora
+                    });
+                    continue;
+                }
+
+                const detallesTMDB = await this.obtenerDetallesPelicula(nombrePelicula);
+
+                let precio = 0;
+                if (site.esGratis) {
+                    precio = 0;
+                } else {
+                    precio = parseFloat(p.precio || p.Precio) || site.precioDefault || 0;
+                }
+
+                const proyeccion = {
+                    nombrePelicula: detallesTMDB?.titulo || nombrePelicula,
+                    fechaHora: fechaHora,
+                    director: detallesTMDB?.director || p.director || p.Director || 'No especificado',
+                    genero: detallesTMDB?.generos || p.genero || p.Genero || 'No especificado',
+                    duracion: detallesTMDB?.duracion || parseInt(p.duracion || p.Duracion) || 0,
+                    sala: p.sala || p.Sala || 'No especificada',
+                    precio: precio,
+                    sitio: site._id,
+                    paisOrigen: detallesTMDB?.paisOrigen || 'No especificado',
+                    esPeliculaArgentina: detallesTMDB?.esPeliculaArgentina || false
+                };
+
+                console.log(`✅ Proyección procesada: ${nombrePelicula} - ${fechaHora.toISOString()}`);
+                processedProjections.push(proyeccion);
+            } catch (error) {
+                console.error(`❌ Error procesando proyección:`, error);
+                continue;
+            }
+        }
+        console.log(`📊 Total proyecciones procesadas: ${processedProjections.length}`);
+        if (processedProjections.length === 0) {
+            console.warn('⚠️ [FilmFetcher] No se procesaron proyecciones');
+        }
+        return processedProjections;
+    }
     async openAIScrape(site, extractedInfo) {
         console.log(`[Scraping Service] Iniciando procesamiento OpenAI para ${site.nombre}`);
         const prompt = `Analiza este contenido HTML y extrae las proyecciones. DEVUELVE SOLO JSON con este formato:
@@ -309,7 +364,7 @@ class ScrapingService {
 
             let content = response.choices[0]?.message?.content.trim() || "{}";
             content = content.replace(/```json\n?|\n?```/g, '').trim();
-            
+
             return JSON.parse(content);
         } catch (error) {
             console.error('Error en OpenAI scrape:', error);
@@ -317,52 +372,9 @@ class ScrapingService {
         }
     }
 
-    async processAIResponse(proyecciones, siteId) {
-        console.log(`🎯 Procesando ${proyecciones.length} proyecciones para sitio ${siteId}`);
-        const processedProjections = [];
-        
-        for (const p of proyecciones) {
-            try {
-                const nombrePelicula = p.nombre || p.Nombre;
-                const fechaHora = new Date(p.fechaHora || p.FechaHora);
-                
-                if (!nombrePelicula || !fechaHora || isNaN(fechaHora.getTime())) {
-                    console.log(`⚠️ Proyección inválida:`, {
-                        nombre: nombrePelicula,
-                        fecha: p.fechaHora || p.FechaHora
-                    });
-                    continue;
-                }
+    
 
-                const detallesTMDB = await this.obtenerDetallesPelicula(nombrePelicula);
-                
-                const proyeccion = {
-                    nombrePelicula: detallesTMDB?.titulo || nombrePelicula,
-                    fechaHora: p.fechaHora,
-                    director: detallesTMDB?.director || p.director || p.Director || 'No especificado',
-                    genero: detallesTMDB?.generos || p.genero || p.Genero || 'No especificado',
-                    duracion: detallesTMDB?.duracion || parseInt(p.duracion || p.Duracion) || 0,
-                    sala: p.sala || p.Sala || 'No especificada',
-                    precio: precio,
-                    sitio: sitioId,
-                    paisOrigen: detallesTMDB?.paisOrigen || 'No especificado',
-                    esPeliculaArgentina: detallesTMDB?.esPeliculaArgentina || false
-                };
 
-                console.log(`✅ Proyección procesada: ${nombrePelicula} - ${fechaHora.toISOString()}`);
-                processedProjections.push(proyeccion);
-            } catch (error) {
-                console.error(`❌ Error procesando proyección:`, error);
-                continue;
-            }
-        }
-
-        console.log(`📊 Total proyecciones procesadas: ${processedProjections.length}`);
-        if (processedProjections.length === 0) {
-            console.warn('⚠️ [FilmFetcher] No se procesaron proyecciones');
-        }
-        return processedProjections;
-    }
     async insertProjections(projections, site) {
         console.log(`📊 [DB] Iniciando inserción de ${projections.length} proyecciones para ${site.nombre}`);
         let insertadas = 0;
@@ -373,20 +385,20 @@ class ScrapingService {
             try {
                 console.log(`🎬 [DB] Procesando: ${projection.nombrePelicula} - ${projection.fechaHora}`);
                 const claveUnica = `${projection.nombrePelicula}-${projection.fechaHora.toISOString()}-${site._id}`;
-                
+
                 const doc = await Projection.findOneAndUpdate(
                     { claveUnica },
-                    { 
-                        ...projection, 
-                        sitio: site._id, 
+                    {
+                        ...projection,
+                        sitio: site._id,
                         nombreCine: site.nombre,
                         claveUnica,
                         habilitado: true,
                         fechaCreacion: new Date()
                     },
-                    { 
-                        upsert: true, 
-                        new: true, 
+                    {
+                        upsert: true,
+                        new: true,
                         setDefaultsOnInsert: true,
                         runValidators: true
                     }
@@ -435,7 +447,7 @@ class ScrapingService {
         try {
             const estado = await scheduleService.obtenerEstadoSchedules();
             const proximo = estado.find(s => s.estado === 'activo');
-            
+
             return proximo ? {
                 nombre: proximo.sitio,
                 fechaScraping: proximo.proximaEjecucion
