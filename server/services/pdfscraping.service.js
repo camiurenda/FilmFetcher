@@ -5,9 +5,6 @@ const Projection = require('../models/projection.model');
 const ScrapingHistory = require('../models/scrapingHistory.model');
 require('dotenv').config();
 
-/**
- * Servicio para extraer y procesar información de carteleras desde archivos PDF
- */
 class PDFScrapingService {
   constructor() {
     this.openaiApiKey = process.env.OPENAI_API_KEY;
@@ -15,89 +12,90 @@ class PDFScrapingService {
     this.INITIAL_RETRY_DELAY = 1000;
   }
 
-  /**
-   * Método principal para procesar un PDF y extraer proyecciones
-   */
   async scrapeFromPDF(pdfUrl, sitioId) {
-    console.log(`Iniciando scraping desde PDF para el sitio ID: ${sitioId}`);
+    console.log(`\n🎬 [PDF Scraping] INICIO SCRAPING DE PDF`);
+    console.log(`📍 URL: ${pdfUrl}`);
+    console.log(`🏢 ID Sitio: ${sitioId}`);
+
+    let site;
     try {
-      const site = await Site.findById(sitioId);
+      site = await Site.findById(sitioId);
       if (!site) {
         throw new Error('Sitio no encontrado');
       }
+      console.log(`✅ [PDF Scraping] Sitio encontrado: ${site.nombre}`);
 
-      // Implementar reintentos con backoff exponencial
-      let lastError;
-      for (let intento = 1; intento <= this.MAX_RETRIES; intento++) {
-        try {
-          const pdfContent = await this.extractPDFContent(pdfUrl);
-          const projections = await this.openAIScrapePDF(pdfContent);
-          
-          if (projections && projections.length > 0) {
-            console.log(`Intento ${intento}: ${projections.length} proyecciones extraídas`);
-            const preparedProjections = this.prepareProjectionsForDB(projections, sitioId, site.nombre);
-            const savedProjections = await this.saveProjections(preparedProjections);
-            await this.updateSiteAndHistory(sitioId, 'exitoso', null, projections.length);
-            return savedProjections;
-          } else {
-            console.log('No se encontraron proyecciones en el contenido del PDF');
-          }
-        } catch (error) {
-          lastError = error;
-          console.warn(`Intento ${intento} fallido:`, error.message);
-          
-          if (intento < this.MAX_RETRIES) {
-            const delay = this.INITIAL_RETRY_DELAY * Math.pow(2, intento - 1);
-            console.log(`Esperando ${delay}ms antes del siguiente intento...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
+      const pdfContent = await this.extractPDFContent(pdfUrl);
+      console.log(`📄 [PDF Scraping] Contenido PDF extraído: ${pdfContent.length} caracteres`);
+
+      const projections = await this.openAIScrapePDF(pdfContent);
+
+      if (projections && projections.length > 0) {
+        console.log(`🎯 [PDF Scraping] ${projections.length} proyecciones extraídas para ${site.nombre}`);
+        const processedProjections = await this.processAIResponse(projections, site);
+
+        if (processedProjections.length > 0) {
+          const preparedProjections = this.prepareProjectionsForDB(processedProjections, sitioId, site.nombre);
+          const savedProjections = await this.saveProjections(preparedProjections);
+          await this.updateSiteAndHistory(sitioId, 'exitoso', null, projections.length);
+
+          console.log(`✨ [PDF Scraping] Proceso completado exitosamente`);
+          console.log(`📊 Resumen:`);
+          console.log(`   - Proyecciones extraídas: ${projections.length}`);
+          console.log(`   - Proyecciones procesadas: ${processedProjections.length}`);
+          console.log(`   - Proyecciones guardadas: ${savedProjections.length}`);
+
+          return savedProjections;
         }
       }
 
-      // Si llegamos aquí, todos los intentos fallaron
-      console.error('Todos los intentos de scraping fallaron');
-      await this.updateSiteAndHistory(sitioId, 'fallido', lastError?.message, 0);
-      throw lastError;
+      console.log(`⚠️ [PDF Scraping] No se encontraron proyecciones en el PDF para ${site.nombre}`);
+      await this.updateSiteAndHistory(sitioId, 'exitoso', 'No se encontraron proyecciones', 0);
+      return [];
+
     } catch (error) {
-      console.error('Error en scrapeFromPDF:', error);
-      await this.updateSiteAndHistory(sitioId, 'fallido', error.message, 0);
+      const errorMessage = error.message || 'Error desconocido en el scraping de PDF';
+      console.error(`❌ [PDF Scraping] Error:`, {
+        sitio: site?.nombre || sitioId,
+        error: errorMessage,
+        stack: error.stack
+      });
+      await this.updateSiteAndHistory(sitioId, 'fallido', errorMessage, 0);
       throw error;
     }
   }
 
-  /**
-   * Extrae el contenido de texto del PDF
-   */
   async extractPDFContent(pdfUrl) {
     try {
-      console.log('Descargando PDF desde:', pdfUrl);
-      const response = await axios.get(pdfUrl, { 
+      console.log('📥 [PDF Scraping] Descargando PDF desde:', pdfUrl);
+      const response = await axios.get(pdfUrl, {
         responseType: 'arraybuffer',
-        timeout: 30000 
+        timeout: 30000
       });
-      
-      console.log('PDF descargado, procesando contenido...');
+
+      console.log('🔄 [PDF Scraping] PDF descargado, procesando contenido...');
       const pdfBuffer = Buffer.from(response.data);
       const data = await pdf(pdfBuffer);
-      
+
       if (!data.text || data.text.trim().length === 0) {
         throw new Error('PDF vacío o sin contenido textual');
       }
-      
+
+      console.log(`📝 [PDF Scraping] Contenido extraído: ${data.text.length} caracteres`);
       return data.text;
     } catch (error) {
-      console.error('Error al extraer contenido del PDF:', error);
+      console.error('❌ [PDF Scraping] Error extrayendo contenido:', error);
       throw new Error(`Error al procesar PDF: ${error.message}`);
     }
   }
 
-  /**
-   * Procesa el PDF usando OpenAI
-   */
   async openAIScrapePDF(pdfContent) {
-    console.log('Iniciando análisis de PDF con OpenAI...');
-    
-    const prompt = `INSTRUCCIÓN IMPORTANTE: ANALIZA EL TEXTO Y DEVUELVE SOLO UN JSON VÁLIDO.
+    console.log('🧠 [PDF Scraping] Iniciando análisis con OpenAI...');
+
+    const prompt = `     
+        Analiza el siguiente texto y extrae las proyecciones de películas en un formato JSON, con la estructura especificada abajo. Utiliza el contexto proporcionado en el texto para determinar el mes y el año de las funciones, y completa las fechas de manera adecuada. Si algún dato no está presente (como género, duración o precio), deja el campo vacío o usa un valor por defecto.
+        
+        INSTRUCCIÓN IMPORTANTE: ANALIZA EL TEXTO Y DEVUELVE SOLO UN JSON VÁLIDO.
 
 Para cada película en la cartelera, extrae:
 1. Nombre exacto
@@ -116,12 +114,17 @@ Si el PDF indica un rango de fechas:
 - Genera una entrada por cada día del período para cada película
 - Usa el año actual (2024) si no se especifica
 
+Si el PDF TIENE TITULO:
+- Ayudate con el para saber a que MES corresponde
+
+Compara las fechas declaradas con el calendario actual para saber si coinciden.
+
 FORMATO JSON REQUERIDO:
 {
   "proyecciones": [
     {
       "nombre": "string",
-      "fechaHora": "2024-01-01T00:00:00.000Z",
+      "fechaHora": "2024-00-00-01T00:00:00.000Z",
       "director": "string",
       "genero": "string",
       "duracion": 0,
@@ -134,6 +137,7 @@ FORMATO JSON REQUERIDO:
 IMPORTANTE: SOLO JSON VÁLIDO, EN PROPERCASE SIN TEXTO ADICIONAL`;
 
     try {
+      console.log('📤 [OpenAI] Enviando consulta a OpenAI');
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
@@ -160,53 +164,93 @@ IMPORTANTE: SOLO JSON VÁLIDO, EN PROPERCASE SIN TEXTO ADICIONAL`;
       );
 
       let content = response.data.choices[0]?.message?.content.trim() || "{}";
-      console.log('Respuesta de OpenAI:', content.substring(0, 200) + '...');
-      
+      console.log('📥 [OpenAI] Respuesta recibida');
+
       content = this.preprocessOpenAIResponse(content);
-      
+      console.log('🔄 [OpenAI] Respuesta preprocesada');
+
       const validation = this.validateResponse(content);
       if (!validation.isValid) {
         throw new Error(`Respuesta inválida: ${validation.error}`);
       }
 
-      return this.processAIResponse(validation.data.proyecciones);
+      console.log(`✅ [OpenAI] Respuesta válida con ${validation.data.proyecciones.length} proyecciones`);
+      return validation.data.proyecciones;
     } catch (error) {
-      console.error('Error en OpenAI scrape:', error);
+      console.error('❌ [OpenAI] Error:', error);
       throw new Error(`Error en procesamiento de OpenAI: ${error.message}`);
     }
   }
 
-  /**
-   * Limpia y formatea la respuesta de OpenAI
-   */
+  async processAIResponse(proyecciones, site) {
+    console.log(`🔄 [PDF Scraping] Procesando ${proyecciones.length} proyecciones para ${site.nombre}`);
+    const currentYear = new Date().getFullYear();
+
+    try {
+      const processed = proyecciones
+        .map(p => {
+          try {
+            let fechaHora = new Date(p.fechaHora || p.FechaHora);
+
+            if (isNaN(fechaHora.getTime())) {
+              console.log(`⚠️ [PDF Scraping] Fecha inválida detectada: ${p.fechaHora}`);
+              return null;
+            }
+
+            if (fechaHora.getFullYear() < currentYear) {
+              fechaHora.setFullYear(currentYear);
+            }
+
+            let precio = site.esGratis ? 0 : (parseFloat(p.precio || p.Precio) || site.precioDefault || 0);
+
+            return {
+              nombrePelicula: p.nombre || p.Nombre || 'Sin título',
+              fechaHora: fechaHora,
+              director: p.director || p.Director || 'No especificado',
+              genero: p.genero || p.Genero || 'No especificado',
+              duracion: parseInt(p.duracion || p.Duracion) || 0,
+              sala: p.sala || p.Sala || 'No especificada',
+              precio: precio,
+              sitio: site._id,
+              nombreCine: site.nombre
+            };
+          } catch (error) {
+            console.error(`❌ [PDF Scraping] Error procesando proyección:`, error);
+            return null;
+          }
+        })
+        .filter(p => p !== null && p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
+
+      console.log(`✅ [PDF Scraping] ${processed.length} proyecciones procesadas correctamente`);
+      return processed;
+    } catch (error) {
+      console.error('❌ [PDF Scraping] Error al procesar respuesta:', error);
+      throw error;
+    }
+  }
+
   preprocessOpenAIResponse(content) {
     try {
-      // Eliminar cualquier texto antes del primer '{'
       const startIndex = content.indexOf('{');
       if (startIndex === -1) throw new Error('No se encontró JSON válido');
       content = content.substring(startIndex);
-      
-      // Eliminar cualquier texto después del último '}'
+
       const endIndex = content.lastIndexOf('}');
       if (endIndex === -1) throw new Error('No se encontró JSON válido');
       content = content.substring(0, endIndex + 1);
-      
-      // Limpiar el contenido
+
       content = content
         .replace(/\s+/g, ' ')
         .replace(/'/g, '"')
         .replace(/[\u2018\u2019]/g, '"')
         .trim();
-      
+
       return content;
     } catch (error) {
       throw new Error(`Error al preprocesar la respuesta: ${error.message}`);
     }
   }
 
-  /**
-   * Valida la estructura y contenido de la respuesta
-   */
   validateResponse(content) {
     try {
       const parsedData = JSON.parse(content);
@@ -220,96 +264,40 @@ IMPORTANTE: SOLO JSON VÁLIDO, EN PROPERCASE SIN TEXTO ADICIONAL`;
       }
 
       const camposRequeridos = ['nombre', 'fechaHora', 'director', 'genero', 'duracion', 'sala', 'precio'];
-      
+
       for (let i = 0; i < parsedData.proyecciones.length; i++) {
         const proj = parsedData.proyecciones[i];
-        
+
         for (const campo of camposRequeridos) {
           if (!proj.hasOwnProperty(campo)) {
-            return { 
-              isValid: false, 
-              error: `Falta el campo ${campo} en la proyección ${i + 1}` 
+            return {
+              isValid: false,
+              error: `Falta el campo ${campo} en la proyección ${i + 1}`
             };
           }
         }
 
         if (!Date.parse(proj.fechaHora)) {
-          return { 
-            isValid: false, 
-            error: `Fecha inválida en la proyección ${i + 1}: ${proj.fechaHora}` 
+          return {
+            isValid: false,
+            error: `Fecha inválida en la proyección ${i + 1}: ${proj.fechaHora}`
           };
         }
       }
 
       return { isValid: true, data: parsedData };
     } catch (error) {
-      return { 
-        isValid: false, 
-        error: `Error al parsear JSON: ${error.message}` 
+      return {
+        isValid: false,
+        error: `Error al parsear JSON: ${error.message}`
       };
     }
   }
 
-  async processAIResponse(proyecciones, sitioId) {
-    const currentYear = new Date().getFullYear();
-    
-    try {
-      const site = await Site.findById(sitioId);
-      if (!site) {
-        throw new Error('Sitio no encontrado');
-      }
-
-      return proyecciones
-        .map(p => {
-          try {
-            let fechaHora = new Date(p.fechaHora || p.FechaHora);
-            
-            if (isNaN(fechaHora.getTime())) {
-              console.error('Fecha inválida detectada:', p.fechaHora);
-              return null;
-            }
-
-            if (fechaHora.getFullYear() < currentYear) {
-              fechaHora.setFullYear(currentYear);
-            }
-
-            let precio = 0;
-            if (site.esGratis) {
-              precio = 0;
-            } else {
-              precio = parseFloat(p.precio || p.Precio) || site.precioDefault || null;
-            }
-
-            return {
-              nombrePelicula: p.nombre || p.Nombre || 'Sin título',
-              fechaHora: fechaHora,
-              director: p.director || p.Director || 'No especificado',
-              genero: p.genero || p.Genero || 'No especificado',
-              duracion: parseInt(p.duracion || p.Duracion) || 0,
-              sala: p.sala || p.Sala || 'No especificada',
-              precio: precio
-            };
-          } catch (error) {
-            console.error('Error procesando proyección:', error);
-            return null;
-          }
-        })
-        .filter(p => p !== null && p.nombrePelicula && p.fechaHora && !isNaN(p.fechaHora.getTime()));
-    } catch (error) {
-      console.error('Error al procesar respuesta del PDF:', error);
-      return [];
-    }
-  }
-  
   prepareProjectionsForDB(projections, sitioId, nombreSitio) {
+    console.log(`🔄 [PDF Scraping] Preparando ${projections.length} proyecciones para DB`);
     return projections.map(p => ({
-      nombrePelicula: p.nombrePelicula,
-      fechaHora: p.fechaHora,
-      director: p.director,
-      genero: p.genero,
-      duracion: p.duracion,
-      sala: p.sala,
-      precio: p.precio,
+      ...p,
       sitio: sitioId,
       nombreCine: nombreSitio,
       claveUnica: `${p.nombrePelicula}-${p.fechaHora.toISOString()}-${sitioId}`,
@@ -319,41 +307,57 @@ IMPORTANTE: SOLO JSON VÁLIDO, EN PROPERCASE SIN TEXTO ADICIONAL`;
     }));
   }
 
-  /**
-   * Guarda las proyecciones en la base de datos
-   */
   async saveProjections(projections) {
+    console.log(`💾 [PDF Scraping] Guardando ${projections.length} proyecciones en DB`);
     const results = [];
+    let exitosas = 0;
+    let duplicadas = 0;
+    let errores = 0;
+
     for (const projection of projections) {
       try {
         const savedProj = await Projection.findOneAndUpdate(
           { claveUnica: projection.claveUnica },
           projection,
-          { 
-            upsert: true, 
+          {
+            upsert: true,
             new: true,
             setDefaultsOnInsert: true,
-            runValidators: true 
+            runValidators: true
           }
         );
         results.push(savedProj);
+        exitosas++;
       } catch (error) {
         if (error.code === 11000) {
-          console.log(`Proyección duplicada ignorada: ${projection.nombrePelicula}`);
+          console.log(`ℹ️ [PDF Scraping] Proyección duplicada: ${projection.nombrePelicula}`);
+          duplicadas++;
         } else {
-          throw error;
+          console.error(`❌ [PDF Scraping] Error guardando proyección:`, error);
+          errores++;
         }
       }
     }
+
+    console.log(`📊 [PDF Scraping] Resumen de guardado:
+        - Exitosas: ${exitosas}
+        - Duplicadas: ${duplicadas}
+        - Errores: ${errores}`);
+
     return results;
   }
 
-  /**
-   * Actualiza el historial de scraping
-   */
   async updateSiteAndHistory(siteId, estado, mensajeError, cantidadProyecciones) {
     try {
-      await ScrapingHistory.create({
+      console.log(`📝 [PDF Scraping] Actualizando historial para sitio ${siteId}`);
+
+      await Site.findByIdAndUpdate(siteId, {
+        $set: {
+          ultimoScrapingExitoso: estado === 'exitoso' ? new Date() : undefined
+        }
+      });
+
+      const historialEntry = await ScrapingHistory.create({
         siteId,
         estado,
         mensajeError,
@@ -361,13 +365,14 @@ IMPORTANTE: SOLO JSON VÁLIDO, EN PROPERCASE SIN TEXTO ADICIONAL`;
         fechaScraping: new Date()
       });
 
-      await Site.findByIdAndUpdate(siteId, {
-        $set: { 
-          ultimoScrapingExitoso: estado === 'exitoso' ? new Date() : undefined
-        }
+      console.log(`✅ [PDF Scraping] Historial actualizado:`, {
+        estado,
+        proyecciones: cantidadProyecciones,
+        error: mensajeError || 'Ninguno'
       });
+
     } catch (error) {
-      console.error('Error al actualizar historial:', error);
+      console.error(`❌ [PDF Scraping] Error actualizando historial:`, error);
       throw error;
     }
   }

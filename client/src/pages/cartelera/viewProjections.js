@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Table, Tag, Space, Typography, Button, Modal, message, Form, Input, DatePicker, InputNumber, Select, Flex, Row, Col } from 'antd';
+import { Table, Checkbox, Tag, Space, Typography, Button, Modal, message, Form, Input, DatePicker, InputNumber, Select, Flex, Row, Col } from 'antd';
 import { PoweroffOutlined, SearchOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
@@ -409,6 +409,25 @@ const ViewProjections = () => {
             </Form.Item>
             <Form.Item name="genero" label="Género">
               <Input />
+            </Form.Item>
+            <Form.Item name="paisOrigen" label="País de Origen">
+              <Select
+                placeholder="Seleccione el país de origen"
+                allowClear
+              >
+                <Select.Option value="Argentina">Argentina</Select.Option>
+                <Select.Option value="Estados Unidos">Estados Unidos</Select.Option>
+                <Select.Option value="España">España</Select.Option>
+                <Select.Option value="Francia">Francia</Select.Option>
+                <Select.Option value="Italia">Italia</Select.Option>
+                <Select.Option value="Reino Unido">Reino Unido</Select.Option>
+                <Select.Option value="México">México</Select.Option>
+                <Select.Option value="Brasil">Brasil</Select.Option>
+                <Select.Option value="Otro">Otro</Select.Option>
+              </Select>
+            </Form.Item>
+            <Form.Item name="esPeliculaArgentina" valuePropName="checked">
+              <Checkbox>Es película argentina</Checkbox>
             </Form.Item>
             <Form.Item name="duracion" label="Duración (minutos)">
               <InputNumber min={1} />

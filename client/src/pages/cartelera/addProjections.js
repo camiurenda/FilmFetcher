@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Form, Input, DatePicker, TimePicker, InputNumber, Select, Button } from 'antd';
+import { Modal, Checkbox, Form, Input, DatePicker, TimePicker, InputNumber, Select, Button } from 'antd';
 import moment from 'moment';
 import axios from 'axios';
 import API_URL from '../../config/api';
@@ -93,6 +93,25 @@ const AddProjectionModal = ({ isVisible, onCancel, onAdd }) => {
         </Form.Item>
         <Form.Item name="genero" label="Género">
           <Input />
+        </Form.Item>
+        <Form.Item name="paisOrigen" label="País de Origen">
+          <Select
+            placeholder="Seleccione el país de origen"
+            allowClear
+          >
+            <Option value="Argentina">Argentina</Option>
+            <Option value="Estados Unidos">Estados Unidos</Option>
+            <Option value="España">España</Option>
+            <Option value="Francia">Francia</Option>
+            <Option value="Italia">Italia</Option>
+            <Option value="Reino Unido">Reino Unido</Option>
+            <Option value="México">México</Option>
+            <Option value="Brasil">Brasil</Option>
+            <Option value="Otro">Otro</Option>
+          </Select>
+        </Form.Item>
+        <Form.Item name="esPeliculaArgentina" valuePropName="checked">
+          <Checkbox>Es película argentina</Checkbox>
         </Form.Item>
         <Form.Item name="duracion" label="Duración (minutos)">
           <InputNumber min={1} />
