@@ -3,7 +3,6 @@ import { Card, Row, Col, Statistic, Spin, Alert } from 'antd';
 import { DatabaseOutlined, ProjectOutlined, ClockCircleOutlined, CheckCircleOutlined, PercentageOutlined, CrownOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import API_URL from '../config/api';
-import { formatDateTime } from '../utils/dateUtils';
 
 const DashboardStats = () => {
   const [stats, setStats] = useState(null);
@@ -16,15 +15,7 @@ const DashboardStats = () => {
         console.log('Iniciando fetchStats');
         const response = await axios.get(`${API_URL}/api/stats`);
         console.log('Respuesta recibida:', response.data);
-        
-        // Formatear las fechas antes de guardarlas en el estado
-        const formattedStats = {
-          ...response.data,
-          proximoScraping: formatDateTime(response.data.proximoScraping),
-          ultimoScrapingExitoso: formatDateTime(response.data.ultimoScrapingExitoso)
-        };
-        
-        setStats(formattedStats);
+        setStats(response.data);
         setLoading(false);
       } catch (error) {
         console.error('Error detallado al obtener estadísticas:', error);
