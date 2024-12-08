@@ -3,42 +3,44 @@ import { Card, Row, Col, Statistic, Spin, Alert } from 'antd';
 import { DatabaseOutlined, ProjectOutlined, ClockCircleOutlined, CheckCircleOutlined, PercentageOutlined, CrownOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import API_URL from '../config/api';
-import moment from 'moment-timezone';
+import moment from 'moment';
 
 const DashboardStats = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const formatearFecha = (fechaISO) => {
-    if (!fechaISO) return 'No disponible';
-    const fecha = moment(fechaISO);
-    if (!fecha.isValid()) return 'Fecha inválida';
-    
-    const ahora = moment();
-    const diferencia = fecha.diff(ahora, 'hours');
+  const isProduction = !API_URL.includes('localhost');
 
-    // Si la fecha es hoy, mostrar "Hoy a las HH:mm"
-    if (fecha.isSame(ahora, 'day')) {
-      return `Hoy a las ${fecha.format('HH:mm')}`;
+  const ajustarHoraEnTexto = (texto) => {
+    if (!texto || texto === 'No hay scraping programado' || texto === 'N/A') return texto;
+
+    // Extrae el nombre del sitio y la fecha entre paréntesis
+    const match = texto.match(/(.*?)\s*\((.*?)\)/);
+    if (!match) return texto;
+
+    const [, sitio, fechaHora] = match;
+    let fecha = moment(fechaHora, 'DD/MM/YYYY, HH:mm:ss');
+    
+    // Solo ajusta en producción
+    if (isProduction) {
+      fecha.subtract(3, 'hours');
     }
-    // Si es mañana, mostrar "Mañana a las HH:mm"
-    else if (fecha.isSame(ahora.clone().add(1, 'day'), 'day')) {
-      return `Mañana a las ${fecha.format('HH:mm')}`;
-    }
-    // Para otras fechas, mostrar la fecha completa
-    return fecha.format('DD/MM/YYYY, HH:mm');
+
+    // Reconstruye el texto con el mismo formato
+    return `${sitio} (${fecha.format('DD/MM/YYYY, HH:mm:ss')})`;
   };
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        console.log('📊 [Stats] Iniciando obtención de estadísticas');
+        console.log('Iniciando fetchStats');
         const response = await axios.get(`${API_URL}/api/stats`);
+        console.log('Respuesta recibida:', response.data);
         setStats(response.data);
         setLoading(false);
       } catch (error) {
-        console.error('❌ [Stats] Error:', error);
+        console.error('Error detallado al obtener estadísticas:', error);
         setError(error.response?.data?.message || error.message);
         setLoading(false);
       }
@@ -47,9 +49,21 @@ const DashboardStats = () => {
     fetchStats();
   }, []);
 
-  if (loading) return <div className="flex justify-center items-center h-64"><Spin size="large" /></div>;
-  if (error) return <Alert message="Error" description={error} type="error" showIcon />;
-  if (!stats) return <Alert message="No hay datos disponibles" type="warning" showIcon />;
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Spin size="large" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return <Alert message="Error" description={error} type="error" showIcon />;
+  }
+
+  if (!stats) {
+    return <Alert message="No hay datos disponibles" type="warning" showIcon />;
+  }
 
   const cardStyle = {
     background: '#1f1f1f',
@@ -66,7 +80,7 @@ const DashboardStats = () => {
       icon: <DatabaseOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     },
     {
-      title: 'Funciones Encontradas',
+      title: 'Funciones encontradas',
       value: stats.funcionesScrapeadas,
       icon: <ProjectOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     },
@@ -82,12 +96,12 @@ const DashboardStats = () => {
     },
     {
       title: 'Próximo Scraping',
-      value: formatearFecha(stats.proximoScraping),
+      value: ajustarHoraEnTexto(stats.proximoScraping),
       icon: <ClockCircleOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     },
     {
       title: 'Último Scraping Exitoso',
-      value: formatearFecha(stats.ultimoScrapingExitoso),
+      value: ajustarHoraEnTexto(stats.ultimoScrapingExitoso),
       icon: <CheckCircleOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     },
     {
