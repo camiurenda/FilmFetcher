@@ -10,37 +10,16 @@ const DashboardStats = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const isProduction = !API_URL.includes('localhost');
-
-  const ajustarHoraEnTexto = (texto) => {
-    if (!texto || texto === 'No hay scraping programado' || texto === 'N/A') return texto;
-
-    // Extrae el nombre del sitio y la fecha entre paréntesis
-    const match = texto.match(/(.*?)\s*\((.*?)\)/);
-    if (!match) return texto;
-
-    const [, sitio, fechaHora] = match;
-    let fecha = moment(fechaHora, 'DD/MM/YYYY, HH:mm:ss');
-    
-    // Solo ajusta en producción
-    if (isProduction) {
-      fecha.subtract(3, 'hours');
-    }
-
-    // Reconstruye el texto con el mismo formato
-    return `${sitio} (${fecha.format('DD/MM/YYYY, HH:mm:ss')})`;
-  };
-
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        console.log('Iniciando fetchStats');
+        console.log('📊 [Stats] Iniciando obtención de estadísticas');
         const response = await axios.get(`${API_URL}/api/stats`);
-        console.log('Respuesta recibida:', response.data);
+        console.log('📊 [Stats] Datos recibidos:', response.data);
         setStats(response.data);
         setLoading(false);
       } catch (error) {
-        console.error('Error detallado al obtener estadísticas:', error);
+        console.error('❌ [Stats] Error:', error);
         setError(error.response?.data?.message || error.message);
         setLoading(false);
       }
@@ -49,21 +28,9 @@ const DashboardStats = () => {
     fetchStats();
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <Spin size="large" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return <Alert message="Error" description={error} type="error" showIcon />;
-  }
-
-  if (!stats) {
-    return <Alert message="No hay datos disponibles" type="warning" showIcon />;
-  }
+  if (loading) return <div className="flex justify-center items-center h-64"><Spin size="large" /></div>;
+  if (error) return <Alert message="Error" description={error} type="error" showIcon />;
+  if (!stats) return <Alert message="No hay datos disponibles" type="warning" showIcon />;
 
   const cardStyle = {
     background: '#1f1f1f',
@@ -73,45 +40,67 @@ const DashboardStats = () => {
     height: '100%'
   };
 
+  const formatearProximoScraping = (proximoScraping) => {
+    if (!proximoScraping || !proximoScraping.fecha) return 'No programado';
+    try {
+      const fecha = moment(proximoScraping.fecha);
+      return `${proximoScraping.sitio || 'Desconocido'} (${fecha.format('DD/MM/YYYY HH:mm')})`;
+    } catch (error) {
+      console.error('Error al formatear próximo scraping:', error);
+      return 'Error en formato';
+    }
+  };
+
+  const formatearUltimoScraping = (ultimoScraping) => {
+    if (!ultimoScraping || !ultimoScraping.fecha) return 'No disponible';
+    try {
+      const fecha = moment(ultimoScraping.fecha);
+      return `${ultimoScraping.sitio || 'Desconocido'} (${fecha.format('DD/MM/YYYY HH:mm')})`;
+    } catch (error) {
+      console.error('Error al formatear último scraping:', error);
+      return 'Error en formato';
+    }
+  };
+
   const statCards = [
     { 
       title: 'Sitios Agregados',
-      value: stats.sitiosAgregados,
+      value: stats.sitiosAgregados || 0,
       icon: <DatabaseOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     },
     {
-      title: 'Funciones encontradas',
-      value: stats.funcionesScrapeadas,
+      title: 'Funciones Encontradas',
+      value: stats.funcionesScrapeadas || 0,
       icon: <ProjectOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     },
     {
       title: 'Películas Argentinas',
-      value: stats.peliculasArgentinas,
+      value: stats.peliculasArgentinas || 0,
       icon: <CrownOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     },
     {
       title: 'Película Más Programada',
-      value: stats.peliculaTopFunciones,
+      value: stats.peliculaTopFunciones || 'No hay datos',
       icon: <CheckCircleOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     },
     {
       title: 'Próximo Scraping',
-      value: ajustarHoraEnTexto(stats.proximoScraping),
+      value: formatearProximoScraping(stats.proximoScraping),
       icon: <ClockCircleOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     },
     {
       title: 'Último Scraping Exitoso',
-      value: ajustarHoraEnTexto(stats.ultimoScrapingExitoso),
+      value: formatearUltimoScraping(stats.ultimoScrapingExitoso),
       icon: <CheckCircleOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     },
     {
       title: 'Tasa de Éxito de Scraping',
-      value: `${stats.tasaExitoScraping}%`,
+      value: `${stats.tasaExitoScraping || 0}%`,
       icon: <PercentageOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     },
     {
       title: 'Sitio Más Activo',
-      value: stats.sitioMasActivo,
+      value: stats.sitioMasActivo || 'No disponible',
       icon: <CrownOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
     }
   ];
