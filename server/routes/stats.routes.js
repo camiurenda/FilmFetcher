@@ -3,7 +3,7 @@ const router = express.Router();
 const Site = require('../models/site.model');
 const Projection = require('../models/projection.model');
 const ScrapingHistory = require('../models/scrapingHistory.model');
-const scheduleService = require('./schedule.service');
+const scheduleService = require('../services/schedule.service');
 const moment = require('moment-timezone');
 
 router.get('/', async (req, res) => {
