@@ -12,6 +12,7 @@ export const adjustTimeZone = (date) => {
     
     const momentDate = moment(date).tz(TIMEZONE);
     
+    // En producción sumamos 3 horas para compensar que vienen 3 horas atrasadas
     if (isProduction) {
         momentDate.add(3, 'hours');
     }
