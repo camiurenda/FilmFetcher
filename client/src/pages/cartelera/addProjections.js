@@ -6,6 +6,8 @@ import API_URL from '../../config/api';
 
 const { Option } = Select;
 
+const isProduction = !API_URL.includes('localhost');
+
 const AddProjectionModal = ({ isVisible, onCancel, onAdd }) => {
   const [form] = Form.useForm();
   const [sites, setSites] = useState([]);
@@ -25,11 +27,16 @@ const AddProjectionModal = ({ isVisible, onCancel, onAdd }) => {
   const handleSubmit = (values) => {
     const fecha = values.fecha.format('YYYY-MM-DD');
     const hora = values.hora.format('HH:mm:ss');
-    const fechaHora = moment(`${fecha} ${hora}`).toISOString();
+    let fechaHora = moment(`${fecha} ${hora}`);
+
+    // Ajustamos la hora si estamos en producción
+    if (isProduction) {
+      fechaHora.add(3, 'hours');
+    }
 
     const formattedValues = {
       ...values,
-      fechaHora,
+      fechaHora: fechaHora.toISOString(),
     };
     delete formattedValues.fecha;
     delete formattedValues.hora;

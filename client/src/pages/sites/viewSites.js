@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import API_URL from '../../config/api';
 import SiteModal from './siteModal';
+import { formatDate } from '../../utils/dateUtils';
 
 const { Title } = Typography;
 const { Search } = Input;
@@ -110,7 +111,6 @@ const ViewSite = () => {
         message.success('Sitio agregado correctamente');
       }
 
-      // Retornamos la respuesta para que siteModal.js pueda acceder al ID
       return response.data;
     } catch (error) {
       console.error('Error al procesar el sitio:', error);
@@ -191,7 +191,7 @@ const ViewSite = () => {
       title: 'Fecha de Creación',
       dataIndex: 'fechaCreacion',
       key: 'fechaCreacion',
-      render: (date) => new Date(date).toLocaleDateString(),
+      render: (date) => formatDate(date),
     },
     {
       title: 'Acciones',

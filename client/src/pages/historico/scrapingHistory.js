@@ -3,6 +3,7 @@ import { Table, Typography, Spin, message, Tag, Tooltip } from 'antd';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import API_URL from '../../config/api';
+import { adjustTimeZone, formatDateTime } from '../../utils/dateUtils';
 
 const { Title } = Typography;
 
@@ -21,7 +22,7 @@ const ScrapingHistory = () => {
       const historialOrdenado = datos
         .map(item => ({
           ...item,
-          fechaScraping: new Date(item.fechaScraping),
+          fechaScraping: adjustTimeZone(item.fechaScraping),
         }))
         .sort((a, b) => a.fechaScraping - b.fechaScraping);
       setHistorial(historialOrdenado);
@@ -45,10 +46,10 @@ const ScrapingHistory = () => {
       dataIndex: 'fechaScraping',
       key: 'fechaScraping',
       render: (fecha) => {
-        const fechaFormateada = fecha instanceof Date ? fecha.toLocaleString() : 'Fecha inválida';
+        const fechaFormateada = fecha instanceof Date ? formatDateTime(fecha) : 'Fecha inválida';
         return <Tooltip title={fechaFormateada}>{fechaFormateada}</Tooltip>;
       },
-      sorter: (a, b) => new Date(a.fechaScraping) - new Date(b.fechaScraping),
+      sorter: (a, b) => a.fechaScraping - b.fechaScraping,
       defaultSortOrder: 'descend',
     },
     {
