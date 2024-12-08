@@ -7,7 +7,6 @@ import ScrapingProgressModal from '../../components/Scrap/ScrapingProgressModal'
 import moment from 'moment';
 import AddProjectionModal from './addProjections';
 import API_URL from '../../config/api';
-import { adjustTimeZone, formatDateTime } from '../../utils/dateUtils';
 
 const { Title } = Typography;
 const { confirm } = Modal;
@@ -239,7 +238,7 @@ const ViewProjections = () => {
     setEditingProjection(record);
     form.setFieldsValue({
       ...record,
-      fechaHora: moment(adjustTimeZone(record.fechaHora)),
+      fechaHora: moment(record.fechaHora),
     });
     setIsEditModalVisible(true);
   };
@@ -251,15 +250,9 @@ const ViewProjections = () => {
 
   const handleEdit = async (values) => {
     try {
-      // Ajustamos la fecha antes de enviarla al servidor
-      const adjustedDate = new Date(values.fechaHora);
-      if (!API_URL.includes('localhost')) {
-        adjustedDate.setHours(adjustedDate.getHours() + 3);
-      }
-
       await axios.put(`${API_URL}/api/projections/${editingProjection._id}`, {
         ...values,
-        fechaHora: adjustedDate.toISOString(),
+        fechaHora: values.fechaHora.toISOString(),
       });
       message.success('Proyección actualizada correctamente');
       setIsEditModalVisible(false);
@@ -272,16 +265,7 @@ const ViewProjections = () => {
 
   const handleAdd = async (values) => {
     try {
-      // Ajustamos la fecha antes de enviarla al servidor
-      const adjustedDate = new Date(values.fechaHora);
-      if (!API_URL.includes('localhost')) {
-        adjustedDate.setHours(adjustedDate.getHours() + 3);
-      }
-
-      await axios.post(`${API_URL}/api/projections/add`, {
-        ...values,
-        fechaHora: adjustedDate.toISOString(),
-      });
+      await axios.post(`${API_URL}/api/projections/add`, values);
       message.success('Proyección agregada correctamente');
       setIsAddModalVisible(false);
       fetchProjections();
@@ -316,9 +300,10 @@ const ViewProjections = () => {
     }
   };
 
+
   const showExportModal = () => {
     Modal.confirm({
-      icon: null,
+      icon: null, // Removemos el ícono de exclamación
       title: (
         <div style={{
           color: '#ffffff',
@@ -417,7 +402,7 @@ const ViewProjections = () => {
       title: 'Fecha y Hora',
       dataIndex: 'fechaHora',
       key: 'fechaHora',
-      render: (fechaHora) => formatDateTime(fechaHora),
+      render: (fechaHora) => moment(fechaHora).format('DD-MM-YYYY HH:mm'),
     },
     {
       title: 'Director',
@@ -456,11 +441,11 @@ const ViewProjections = () => {
       title: 'Vigencia',
       key: 'estado',
       render: (_, record) => {
-        const ahora = new Date();
-        const fechaProyeccion = adjustTimeZone(record.fechaHora);
-        if (fechaProyeccion < ahora) {
+        const ahora = moment();
+        const fechaProyeccion = moment(record.fechaHora);
+        if (fechaProyeccion.isBefore(ahora)) {
           return <span style={{ color: 'red' }}>Finalizada</span>;
-        } else if (fechaProyeccion.toDateString() === ahora.toDateString()) {
+        } else if (fechaProyeccion.isSame(ahora, 'day')) {
           return <span style={{ color: 'green' }}>Hoy</span>;
         } else {
           return <span style={{ color: 'blue' }}>Próxima</span>;
