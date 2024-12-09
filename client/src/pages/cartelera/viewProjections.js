@@ -402,7 +402,7 @@ const ViewProjections = () => {
       title: 'Fecha y Hora',
       dataIndex: 'fechaHora',
       key: 'fechaHora',
-      render: (fechaHora) => moment(fechaHora).format('DD-MM-YYYY HH:mm'),
+      render: (fechaHora) => formatDateTime(fechaHora),
     },
     {
       title: 'Director',
