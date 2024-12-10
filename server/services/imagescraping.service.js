@@ -112,7 +112,7 @@ class ImageScrapingService {
   async openAIScrapeImage(imageUrl) {
     console.log('Ejecutando análisis basado en OpenAI para la imagen');
 
-    const prompt = `Analiza la imagen de cartelera y extrae los datos en formato JSON estructurado.
+    const prompt = `Primero analiza la imagen de cartelera, calcula cuantas proyecciones debe haber, y extrae los datos en formato JSON estructurado.
     CONTEXTO:
     
     Asume año actual (2024) salvo indicación contraria
