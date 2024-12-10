@@ -115,7 +115,7 @@ const ViewProjections = () => {
   };
 
   const handleManualLoad = async (values) => {
-    console.log('Iniciando proceso de carga manual');
+    console.log('🔄 [Manual Load] Iniciando proceso de carga manual:', values);
     setLoading(true);
     
     // Primero cerramos el modal de carga manual
@@ -126,10 +126,11 @@ const ViewProjections = () => {
       visible: true,
       currentStep: 0,
       status: {
-        initialization: { detail: 'Validando archivo y sitio...' }
+        initialization: { detail: `Validando ${values.fileType} y sitio...` }
       },
       error: null,
-      stats: { total: 0, processed: 0 }
+      stats: { total: 0, processed: 0 },
+      type: values.fileType  // Aquí está el cambio clave
     });
 
     try {
@@ -140,7 +141,7 @@ const ViewProjections = () => {
         currentStep: 1,
         status: {
           ...prev.status,
-          extraction: { detail: 'Extrayendo contenido del PDF...' }
+          extraction: { detail: `Extrayendo contenido del ${values.fileType}...` }
         }
       }));
 
@@ -210,12 +211,12 @@ const ViewProjections = () => {
       message.success('Proyecciones cargadas correctamente desde el archivo');
 
     } catch (error) {
-      console.error('Error al cargar proyecciones desde archivo:', error);
+      console.error('❌ [Manual Load] Error:', error);
       setScrapingProgress(prev => ({
         ...prev,
-        error: error.response?.data?.message || error.message || 'Error al procesar el archivo'
+        error: error.response?.data?.message || error.message || `Error al procesar el ${values.fileType}`
       }));
-      message.error('Error al cargar proyecciones desde el archivo');
+      message.error(`Error al cargar proyecciones desde el ${values.fileType}`);
     } finally {
       setLoading(false);
     }
