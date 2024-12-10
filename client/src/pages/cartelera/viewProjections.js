@@ -115,7 +115,7 @@ const ViewProjections = () => {
   };
 
   const handleManualLoad = async (values) => {
-    console.log('🔄 [Manual Load] Iniciando proceso de carga manual:', values);
+    console.log('🔄 [Manual Load] Iniciando proceso de carga manual');
     setLoading(true);
     
     // Primero cerramos el modal de carga manual
@@ -125,12 +125,10 @@ const ViewProjections = () => {
     setScrapingProgress({
       visible: true,
       currentStep: 0,
-      status: {
-        initialization: { detail: `Validando ${values.fileType} y sitio...` }
-      },
+      status: {},
       error: null,
       stats: { total: 0, processed: 0 },
-      type: values.fileType  // Aquí está el cambio clave
+      type: values.fileType
     });
 
     try {
@@ -141,7 +139,7 @@ const ViewProjections = () => {
         currentStep: 1,
         status: {
           ...prev.status,
-          extraction: { detail: `Extrayendo contenido del ${values.fileType}...` }
+          extraction: { detail: `Extrayendo contenido...` }
         }
       }));
 
@@ -158,7 +156,7 @@ const ViewProjections = () => {
         currentStep: 2,
         status: {
           ...prev.status,
-          aiProcessing: { detail: 'Analizando contenido con OpenAI...' }
+          aiProcessing: { detail: 'Procesando con OpenAI...' }
         }
       }));
 
