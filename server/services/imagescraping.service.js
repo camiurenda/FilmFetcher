@@ -112,53 +112,44 @@ class ImageScrapingService {
   async openAIScrapeImage(imageUrl) {
     console.log('Ejecutando análisis basado en OpenAI para la imagen');
 
-    const prompt = `Primero analiza la imagen de cartelera, calcula cuantas proyecciones debe haber, y extrae los datos en formato JSON estructurado.
-    CONTEXTO:
+    const prompt = `INSTRUCCIÓN IMPORTANTE: ANALIZA LA IMAGEN Y DEVUELVE SOLO UN JSON VÁLIDO.
+
+    Para cada película en la cartelera, extrae:
+    1. Nombre exacto
+    2. Fecha y hora en formato ISO (YYYY-MM-DDTHH:mm:ss.sssZ)
+    3. Director si está disponible
+    4. Género si está disponible
+    5. Duración en minutos
+    6. Sala
+    7. Precio
     
-    Asume año actual (2024) salvo indicación contraria
-    Para rangos de fechas, genera una entrada por cada día
-    Usa "No especificado" para texto faltante y 0 para números faltantes
-    Los títulos de películas deben estar en Propercase
+    Si un campo no está disponible:
+    - Usar "No especificado" para strings
+    - Usar 0 para números
     
-    ESTRUCTURA REQUERIDA:
+    Si la imagen indica un rango de fechas (ej: "válido del 20/11 al 27/11"):
+    - Genera una entrada por cada día del período para cada película y horario
+    - Usa el año actual (2024) si no se especifica
+    
+    FORMATO JSON REQUERIDO:
     {
-    "proyecciones": [
-    {
-    "nombre": "Título De La Película",
-    "fechaHora": "2024-MM-DDTHH:mm:ss.sssZ",
-    "director": "Nombre Del Director",
-    "genero": "Géneros Separados Por Comas",
-    "duracion": 120,
-    "sala": "Identificador De Sala",
-    "precio": 2500.00
+      "proyecciones": [
+        {
+          "nombre": "string",
+          "fechaHora": "2024-01-01T00:00:00.000Z",
+          "director": "string",
+          "genero": "string",
+          "duracion": 0,
+          "sala": "string",
+          "precio": 0
+        }
+      ]
     }
-    ]
-    }
-    REGLAS DE PROCESAMIENTO:
     
-    FECHAS
-    
-    Convierte todo a ISO 8601
-    Expande rangos de fechas a entradas individuales
-    Normaliza formatos parciales (ej: "15/11" → "2024-11-15")
-    
-    
-    PRECIOS
-    
-    Convierte a número decimal
-    Incluye centavos si están especificados
-    Sin símbolo de moneda
-    
-    
-    TEXTO
-    
-    Normaliza espacios
-    Elimina caracteres especiales
-    Capitaliza Nombres Propios
-    
-    
-    
-    RETORNA ÚNICAMENTE EL JSON, SIN TEXTO ADICIONAL.`;
+    IMPORTANTE:
+    - RESPONDE SOLO CON EL JSON, SIN TEXTO ADICIONAL
+    - CADA OBJETO DEBE TENER EXACTAMENTE LOS CAMPOS ESPECIFICADOS
+    - USA VALORES POR DEFECTO SI NO HAY INFORMACIÓN`;
 
     try {
       const response = await axios.post(
