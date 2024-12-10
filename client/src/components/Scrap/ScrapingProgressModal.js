@@ -102,8 +102,8 @@ const ScrapingProgressModal = ({
 
   return (
     <Modal
-      title={`Progreso del ${type === 'pdf' ? 'PDF' : type === 'image' ? 'Imagen' : 'Scraping'}`}
-      open={visible}
+    title={`Progreso del ${type === 'image' ? 'Imagen' : type === 'pdf' ? 'PDF' : 'Scraping'}`}
+    open={visible}
       onCancel={handleClose}
       width={600}
       footer={[
