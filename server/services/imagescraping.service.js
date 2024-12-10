@@ -127,7 +127,7 @@ class ImageScrapingService {
     - Usar "No especificado" para strings
     - Usar 0 para números
     
-    Si la imagen indica un rango de fechas (ej: "válido del 20/11 al 27/11"):
+    Si la imagen indica un rango de fechas (ej: "Programación válida del 20/12 al 27/12"):
     - Genera una entrada por cada día del período para cada película y horario
     - Usa el año actual (2024) si no se especifica
     
