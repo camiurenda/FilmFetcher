@@ -1,27 +1,63 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Typography, Spin, message, Empty, Alert, Button, Space } from 'antd';
-import axios from 'axios';
+import { 
+  Table, 
+  Typography, 
+  Spin, 
+  message, 
+  Empty, 
+  Alert, 
+  Button, 
+  Space,
+  Card,
+  Statistic,
+  Badge,
+  Tag,
+  Tooltip,
+  Row,
+  Col,
+  Progress
+} from 'antd';
+import {
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  WarningOutlined,
+  CalendarOutlined,
+  ReloadOutlined,
+  FieldTimeOutlined
+} from '@ant-design/icons';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
+import axios from 'axios';
 import API_URL from '../../config/api';
 import moment from 'moment';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 const ScrapingSchedule = () => {
   const [schedule, setSchedule] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [mostrarAnteriores, setMostrarAnteriores] = useState(false);
+  const [estadisticas, setEstadisticas] = useState({
+    total: 0,
+    programadosHoy: 0,
+    completados: 0,
+    fallidos: 0,
+    proximoScraping: null
+  });
+  const [actualizando, setActualizando] = useState(false);
 
   const fetchSchedule = async () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Solicitando schedules a:', `${API_URL}/api/scraping-schedule`);
-      const response = await axios.get(`${API_URL}/api/scraping-schedule`);
+      
+      const [scheduleResponse, statsResponse] = await Promise.all([
+        axios.get(`${API_URL}/api/scraping-schedule`),
+        axios.get(`${API_URL}/api/stats`)
+      ]);
       
       const ahora = moment();
-      const schedules = response.data
+      const schedules = scheduleResponse.data
         .map(schedule => ({
           ...schedule,
           key: schedule._id,
@@ -42,50 +78,84 @@ const ScrapingSchedule = () => {
           return a.proximaEjecucion.diff(b.proximaEjecucion);
         });
 
-      console.log(`Encontrados ${schedules.length} schedules ${mostrarAnteriores ? 'anteriores' : 'futuros'}`);
+      // Calcular estadísticas
+      const programadosHoy = schedules.filter(s => 
+        s.proximaEjecucion && s.proximaEjecucion.isSame(ahora, 'day')
+      ).length;
+
+      const completados = schedules.filter(s => s.ultimaEjecucion).length;
+      const fallidos = schedules.filter(s => s.ultimoError).length;
+      
       setSchedule(schedules);
+      setEstadisticas({
+        total: schedules.length,
+        programadosHoy,
+        completados,
+        fallidos,
+        tasaExito: statsResponse.data.tasaExitoScraping,
+        proximoScraping: statsResponse.data.proximoScraping
+      });
+
     } catch (error) {
       console.error('Error al cargar schedules:', error);
       setError(error.response?.data?.message || 'Error al cargar el horario de scraping');
       message.error('Error al cargar el horario de scraping');
     } finally {
       setLoading(false);
+      setActualizando(false);
     }
   };
 
   useEffect(() => {
     fetchSchedule();
+    const intervalo = setInterval(fetchSchedule, 60000);
+    return () => clearInterval(intervalo);
   }, [mostrarAnteriores]);
+
+  const handleRefresh = () => {
+    setActualizando(true);
+    fetchSchedule();
+  };
 
   const columns = [
     {
       title: 'Nombre del Sitio',
       dataIndex: 'sitioNombre',
-      key: 'sitioNombre'
+      key: 'sitioNombre',
+      fixed: 'left'
     },
     {
       title: 'Frecuencia',
       dataIndex: 'tipoFrecuencia',
       key: 'tipoFrecuencia',
-      render: (tipoFrecuencia) => tipoFrecuencia.charAt(0).toUpperCase() + tipoFrecuencia.slice(1)
+      render: (tipoFrecuencia) => (
+        <Tag color="blue">
+          {tipoFrecuencia.charAt(0).toUpperCase() + tipoFrecuencia.slice(1)}
+        </Tag>
+      )
     },
     {
       title: 'Último Scraping',
       key: 'ultimaEjecucion',
       render: (_, record) => (
-        record.ultimaEjecucion ? (
-          <Space>
-            <span>{record.ultimaEjecucion.format('DD/MM/YYYY HH:mm')}</span>
-            <span style={{ color: 'rgba(255, 255, 255, 0.45)' }}>
-              ({record.ultimaEjecucion.fromNow()})
-            </span>
-          </Space>
-        ) : 'Nunca'
-      ),
-      sorter: (a, b) => {
-        if (!a.ultimaEjecucion || !b.ultimaEjecucion) return 0;
-        return a.ultimaEjecucion.diff(b.ultimaEjecucion);
-      }
+        <Space>
+          <Badge 
+            status={record.ultimoError ? 'error' : 'success'} 
+            text={
+              record.ultimaEjecucion ? (
+                <Tooltip title={record.ultimoError?.mensaje}>
+                  <span>
+                    {record.ultimaEjecucion.format('DD/MM/YYYY HH:mm')}
+                    <Text type="secondary" style={{ marginLeft: 8 }}>
+                      ({record.ultimaEjecucion.fromNow()})
+                    </Text>
+                  </span>
+                </Tooltip>
+              ) : 'Nunca'
+            }
+          />
+        </Space>
+      )
     },
     {
       title: 'Próximo Scraping',
@@ -93,75 +163,161 @@ const ScrapingSchedule = () => {
       render: (_, record) => (
         record.proximaEjecucion ? (
           <Space>
+            <ClockCircleOutlined />
             <span>{record.proximaEjecucion.format('DD/MM/YYYY HH:mm')}</span>
-            <span style={{ color: 'rgba(255, 255, 255, 0.45)' }}>
+            <Text type="secondary">
               ({record.proximaEjecucion.fromNow()})
-            </span>
+            </Text>
           </Space>
         ) : 'No programado'
-      ),
-      sorter: (a, b) => {
-        if (!a.proximaEjecucion || !b.proximaEjecucion) return 0;
-        return a.proximaEjecucion.diff(b.proximaEjecucion);
-      },
-      defaultSortOrder: 'ascend'
+      )
     },
     {
       title: 'Estado',
       key: 'estado',
       render: (_, record) => {
         const ahora = moment();
-        let color = 'default';
-        let texto = 'No programado';
-
-        if (record.proximaEjecucion) {
-          if (record.proximaEjecucion.isBefore(ahora)) {
-            color = 'red';
-            texto = 'Vencido';
-          } else if (record.proximaEjecucion.isSame(ahora, 'day')) {
-            color = 'green';
-            texto = 'Hoy';
-          } else {
-            color = 'blue';
-            texto = 'Próximo';
-          }
-        }
-
+        const estado = getEstado(record, ahora);
+        
         return (
-          <span style={{ color: getColorByStatus(color) }}>
-            {texto}
-          </span>
+          <Badge
+            status={estado.status}
+            text={
+              <Space>
+                <span style={{ color: estado.color }}>{estado.texto}</span>
+                {record.bloqueo?.bloqueado && (
+                  <Tooltip title={record.bloqueo.razon}>
+                    <WarningOutlined style={{ color: '#ff4d4f' }} />
+                  </Tooltip>
+                )}
+              </Space>
+            }
+          />
         );
       }
     }
   ];
 
-  const getColorByStatus = (status) => {
-    const colors = {
-      red: '#ff4d4f',
-      green: '#52c41a',
-      blue: '#1890ff',
-      default: '#d9d9d9'
+  const getEstado = (record, ahora) => {
+    if (record.bloqueo?.bloqueado) {
+      return { 
+        status: 'error',
+        color: '#ff4d4f',
+        texto: 'Bloqueado'
+      };
+    }
+
+    if (!record.proximaEjecucion) {
+      return {
+        status: 'default',
+        color: '#d9d9d9',
+        texto: 'No programado'
+      };
+    }
+
+    if (record.proximaEjecucion.isBefore(ahora)) {
+      return {
+        status: 'warning',
+        color: '#faad14',
+        texto: 'Vencido'
+      };
+    }
+
+    if (record.proximaEjecucion.isSame(ahora, 'day')) {
+      return {
+        status: 'processing',
+        color: '#1890ff',
+        texto: 'Hoy'
+      };
+    }
+
+    return {
+      status: 'success',
+      color: '#52c41a',
+      texto: 'Próximo'
     };
-    return colors[status] || colors.default;
   };
+
+  const renderEstadisticas = () => (
+    <Row gutter={[16, 16]} className="mb-6">
+      <Col xs={24} sm={12} md={6}>
+        <Card>
+          <Statistic
+            title="Total Schedules"
+            value={estadisticas.total}
+            prefix={<CalendarOutlined />}
+          />
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} md={6}>
+        <Card>
+          <Statistic
+            title="Programados Hoy"
+            value={estadisticas.programadosHoy}
+            prefix={<ClockCircleOutlined />}
+            valueStyle={{ color: '#1890ff' }}
+          />
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} md={6}>
+        <Card>
+          <Statistic
+            title="Tasa de Éxito"
+            value={estadisticas.tasaExito}
+            suffix="%"
+            prefix={<CheckCircleOutlined />}
+            valueStyle={{ color: '#52c41a' }}
+          />
+          <Progress 
+            percent={estadisticas.tasaExito} 
+            showInfo={false} 
+            strokeColor="#52c41a"
+            size="small"
+          />
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} md={6}>
+        <Card>
+          <Statistic
+            title="Próximo Scraping"
+            value={estadisticas.proximoScraping?.sitio || 'No programado'}
+            prefix={<FieldTimeOutlined />}
+          />
+          {estadisticas.proximoScraping && (
+            <Text type="secondary">
+              {moment(estadisticas.proximoScraping.fecha).fromNow()}
+            </Text>
+          )}
+        </Card>
+      </Col>
+    </Row>
+  );
 
   return (
     <AuthWrapper>
       <div style={{ padding: '24px', background: '#141414', borderRadius: '8px' }}>
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          <Title level={2} style={{ color: '#fff', marginBottom: '24px' }}>
-            Horario de Scraping
-          </Title>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-            <Button
-              type="primary"
-              onClick={() => setMostrarAnteriores(!mostrarAnteriores)}
-            >
-              {mostrarAnteriores ? 'Ver Próximos Scrapings' : 'Ver Scrapings Anteriores'}
-            </Button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Title level={2} style={{ color: '#fff', margin: 0 }}>
+              Horario de Scraping
+            </Title>
+            <Space>
+              <Button
+                type="primary"
+                onClick={() => setMostrarAnteriores(!mostrarAnteriores)}
+              >
+                {mostrarAnteriores ? 'Ver Próximos' : 'Ver Anteriores'}
+              </Button>
+              <Tooltip title="Actualizar">
+                <Button
+                  icon={<ReloadOutlined spin={actualizando} />}
+                  onClick={handleRefresh}
+                />
+              </Tooltip>
+            </Space>
           </div>
+
+          {renderEstadisticas()}
           
           {error && (
             <Alert
@@ -169,7 +325,6 @@ const ScrapingSchedule = () => {
               description={error}
               type="error"
               showIcon
-              style={{ marginBottom: '16px' }}
             />
           )}
 
