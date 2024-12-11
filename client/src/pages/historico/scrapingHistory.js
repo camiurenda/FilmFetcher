@@ -3,7 +3,6 @@ import { Table, Typography, Spin, message, Tag, Tooltip } from 'antd';
 import axios from 'axios';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import API_URL from '../../config/api';
-import { adjustTimeZone, formatDateTime } from '../../utils/dateUtils';
 
 const { Title } = Typography;
 
@@ -19,12 +18,10 @@ const ScrapingHistory = () => {
     try {
       const respuesta = await axios.get(`${API_URL}/api/scraping-history`);
       const datos = Array.isArray(respuesta.data) ? respuesta.data : [];
-      const historialOrdenado = datos
-        .map(item => ({
-          ...item,
-          fechaScraping: adjustTimeZone(item.fechaScraping),
-        }))
-        .sort((a, b) => a.fechaScraping - b.fechaScraping);
+      // Ordenar por fecha de scraping (más reciente primero)
+      const historialOrdenado = datos.sort((a, b) => 
+        new Date(b.fechaScraping) - new Date(a.fechaScraping)
+      );
       setHistorial(historialOrdenado);
     } catch (error) {
       console.error('Error al obtener el historial de scraping:', error);
@@ -32,6 +29,17 @@ const ScrapingHistory = () => {
     } finally {
       setCargando(false);
     }
+  };
+
+  const formatearFecha = (fecha) => {
+    if (!fecha) return 'Fecha inválida';
+    return new Date(fecha).toLocaleString('es-AR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
   
   const columnas = [
@@ -46,10 +54,10 @@ const ScrapingHistory = () => {
       dataIndex: 'fechaScraping',
       key: 'fechaScraping',
       render: (fecha) => {
-        const fechaFormateada = fecha instanceof Date ? formatDateTime(fecha) : 'Fecha inválida';
+        const fechaFormateada = formatearFecha(fecha);
         return <Tooltip title={fechaFormateada}>{fechaFormateada}</Tooltip>;
       },
-      sorter: (a, b) => a.fechaScraping - b.fechaScraping,
+      sorter: (a, b) => new Date(b.fechaScraping) - new Date(a.fechaScraping),
       defaultSortOrder: 'descend',
     },
     {

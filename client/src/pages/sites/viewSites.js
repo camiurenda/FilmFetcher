@@ -188,12 +188,6 @@ const ViewSite = () => {
       ),
     },
     {
-      title: 'Fecha de Creación',
-      dataIndex: 'fechaCreacion',
-      key: 'fechaCreacion',
-      render: (date) => formatDate(date),
-    },
-    {
       title: 'Acciones',
       key: 'action',
       render: (_, record) => (
