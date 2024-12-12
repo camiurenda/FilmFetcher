@@ -444,7 +444,12 @@ const ViewProjections = () => {
       render: (_, record) => {
         const ahora = moment();
         const fechaProyeccion = moment(record.fechaHora);
-        if (fechaProyeccion.isBefore(ahora)) {
+        const horasAntes = moment.duration(ahora.diff(fechaProyeccion)).asHours();
+
+        // Si estamos en producción y la película comenzó hace menos de 3 horas
+        if (process.env.NODE_ENV === 'production' && horasAntes > 0 && horasAntes <= 3) {
+          return <span style={{ color: 'green' }}>Hoy</span>;
+        } else if (fechaProyeccion.isBefore(ahora)) {
           return <span style={{ color: 'red' }}>Finalizada</span>;
         } else if (fechaProyeccion.isSame(ahora, 'day')) {
           return <span style={{ color: 'green' }}>Hoy</span>;
