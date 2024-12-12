@@ -58,9 +58,16 @@ router.post('/add', async (req, res) => {
 router.get('/proyecciones-actuales', async (req, res) => {
   try {
     const fechaActual = new Date();
+    let fechaLimite = new Date(fechaActual);
+
+    // Si estamos en producción, incluimos películas de hasta 3 horas antes
+    if (process.env.NODE_ENV === 'production') {
+      fechaLimite.setHours(fechaLimite.getHours() - 3);
+    }
+
     const projections = await Projection.find({
       habilitado: true,
-      fechaHora: { $gte: fechaActual }
+      fechaHora: { $gte: fechaLimite }
     })
     .sort({ fechaHora: 1 });
     res.status(200).json(projections);
