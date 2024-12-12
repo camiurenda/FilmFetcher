@@ -15,7 +15,9 @@ import {
   Tooltip,
   Row,
   Col,
-  Progress
+  Progress,
+  Modal,
+  List
 } from 'antd';
 import {
   CheckCircleOutlined,
@@ -23,7 +25,9 @@ import {
   WarningOutlined,
   CalendarOutlined,
   ReloadOutlined,
-  FieldTimeOutlined
+  FieldTimeOutlined,
+  CopyOutlined,
+  ExclamationCircleOutlined
 } from '@ant-design/icons';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import axios from 'axios';
@@ -42,18 +46,22 @@ const ScrapingSchedule = () => {
     programadosHoy: 0,
     completados: 0,
     fallidos: 0,
-    proximoScraping: null
+    proximoScraping: null,
+    sitiosSinSchedule: []
   });
   const [actualizando, setActualizando] = useState(false);
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  const [sitiosSinScheduleModalVisible, setSitiosSinScheduleModalVisible] = useState(false);
 
   const fetchSchedule = async () => {
     try {
       setLoading(true);
       setError(null);
       
-      const [scheduleResponse, statsResponse] = await Promise.all([
+      const [scheduleResponse, statsResponse, sitesResponse] = await Promise.all([
         axios.get(`${API_URL}/api/scraping-schedule`),
-        axios.get(`${API_URL}/api/stats`)
+        axios.get(`${API_URL}/api/stats`),
+        axios.get(`${API_URL}/api/sites`)
       ]);
       
       const ahora = moment();
@@ -78,6 +86,10 @@ const ScrapingSchedule = () => {
           return a.proximaEjecucion.diff(b.proximaEjecucion);
         });
 
+      // Encontrar sitios sin schedule
+      const sitiosConSchedule = new Set(schedules.map(s => s.sitioId?._id));
+      const sitiosSinSchedule = sitesResponse.data.filter(site => !sitiosConSchedule.has(site._id));
+
       // Calcular estadísticas
       const programadosHoy = schedules.filter(s => 
         s.proximaEjecucion && s.proximaEjecucion.isSame(ahora, 'day')
@@ -93,7 +105,8 @@ const ScrapingSchedule = () => {
         completados,
         fallidos,
         tasaExito: statsResponse.data.tasaExitoScraping,
-        proximoScraping: statsResponse.data.proximoScraping
+        proximoScraping: statsResponse.data.proximoScraping,
+        sitiosSinSchedule
       });
 
     } catch (error) {
@@ -117,12 +130,37 @@ const ScrapingSchedule = () => {
     fetchSchedule();
   };
 
+  const handleCopyId = (id, siteName) => {
+    navigator.clipboard.writeText(id).then(() => {
+      message.success(`ID de ${siteName} copiado al portapapeles`);
+    }).catch(() => {
+      message.error('Error al copiar el ID');
+    });
+  };
+
   const columns = [
     {
       title: 'Nombre del Sitio',
       dataIndex: 'sitioNombre',
       key: 'sitioNombre',
-      fixed: 'left'
+      fixed: 'left',
+      render: (sitioNombre, record) => (
+        <Space>
+          <Text 
+            style={{ 
+              cursor: 'pointer', 
+              color: '#1890ff',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+            onClick={() => handleCopyId(record._id, sitioNombre)}
+          >
+            {sitioNombre}
+            <CopyOutlined style={{ fontSize: '14px' }} />
+          </Text>
+        </Space>
+      )
     },
     {
       title: 'Frecuencia',
@@ -238,6 +276,113 @@ const ScrapingSchedule = () => {
     };
   };
 
+  const handleErrorCardClick = () => {
+    setErrorModalVisible(true);
+  };
+
+  const handleSitiosSinScheduleClick = () => {
+    setSitiosSinScheduleModalVisible(true);
+  };
+
+  const renderErrorModal = () => {
+    const schedulesWithErrors = schedule.filter(s => s.intentosFallidos > 0);
+    
+    return (
+      <Modal
+        title={<span><WarningOutlined style={{ color: '#faad14', marginRight: 8 }} />Schedules con Errores</span>}
+        open={errorModalVisible}
+        onCancel={() => setErrorModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setErrorModalVisible(false)}>
+            Cerrar
+          </Button>
+        ]}
+        width={700}
+      >
+        {schedulesWithErrors.length > 0 ? (
+          <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+            {schedulesWithErrors.map((s, index) => (
+              <Card key={s._id} style={{ marginBottom: 16 }} size="small">
+                <div>
+                  <Text strong>ID: </Text>
+                  <Text code>{s._id}</Text>
+                </div>
+                <div>
+                  <Text strong>Sitio: </Text>
+                  <Text>{s.sitioNombre}</Text>
+                </div>
+                <div>
+                  <Text strong>Intentos fallidos: </Text>
+                  <Text type="danger">{s.intentosFallidos}</Text>
+                </div>
+                {s.ultimoError && (
+                  <div>
+                    <Text strong>Último error: </Text>
+                    <Text type="danger">{s.ultimoError.mensaje}</Text>
+                  </div>
+                )}
+                {s.bloqueo?.bloqueado && (
+                  <div>
+                    <Text strong>Razón de bloqueo: </Text>
+                    <Text type="danger">{s.bloqueo.razon}</Text>
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Empty description="No hay schedules con errores" />
+        )}
+      </Modal>
+    );
+  };
+
+  const renderSitiosSinScheduleModal = () => {
+    return (
+      <Modal
+        title={<span><ExclamationCircleOutlined style={{ color: '#1890ff', marginRight: 8 }} />Sitios sin Schedule</span>}
+        open={sitiosSinScheduleModalVisible}
+        onCancel={() => setSitiosSinScheduleModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setSitiosSinScheduleModalVisible(false)}>
+            Cerrar
+          </Button>
+        ]}
+        width={700}
+      >
+        {estadisticas.sitiosSinSchedule.length > 0 ? (
+          <List
+            dataSource={estadisticas.sitiosSinSchedule}
+            renderItem={site => (
+              <List.Item>
+                <Space>
+                  <Text 
+                    style={{ 
+                      cursor: 'pointer', 
+                      color: '#1890ff',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    onClick={() => handleCopyId(site._id, site.nombre)}
+                  >
+                    {site.nombre}
+                    <CopyOutlined style={{ fontSize: '14px' }} />
+                  </Text>
+                  {site.url && (
+                    <Text type="secondary">({site.url})</Text>
+                  )}
+                </Space>
+              </List.Item>
+            )}
+          />
+        ) : (
+          <Empty description="Todos los sitios tienen schedule configurado" />
+        )}
+      </Modal>
+    );
+  };
+
   const renderEstadisticas = () => (
     <Row gutter={[16, 16]} className="mb-6">
       <Col xs={24} sm={12} md={6}>
@@ -260,7 +405,11 @@ const ScrapingSchedule = () => {
         </Card>
       </Col>
       <Col xs={24} sm={12} md={6}>
-        <Card>
+        <Card 
+          hoverable
+          onClick={handleErrorCardClick}
+          style={{ cursor: 'pointer' }}
+        >
           <Statistic
             title="Schedules con Errores"
             value={schedule.filter(s => s.intentosFallidos > 0).length}
@@ -274,17 +423,20 @@ const ScrapingSchedule = () => {
         </Card>
       </Col>
       <Col xs={24} sm={12} md={6}>
-        <Card>
+        <Card 
+          hoverable
+          onClick={handleSitiosSinScheduleClick}
+          style={{ cursor: 'pointer' }}
+        >
           <Statistic
-            title="Próximo Scraping"
-            value={estadisticas.proximoScraping?.sitio || 'No programado'}
-            prefix={<FieldTimeOutlined />}
+            title="Sitios sin Schedule"
+            value={estadisticas.sitiosSinSchedule.length}
+            prefix={<ExclamationCircleOutlined />}
+            valueStyle={{ color: '#1890ff' }}
           />
-          {estadisticas.proximoScraping && (
-            <Text type="secondary">
-              {moment(estadisticas.proximoScraping.fecha).fromNow()}
-            </Text>
-          )}
+          <Text type="secondary">
+            Click para ver detalles
+          </Text>
         </Card>
       </Col>
     </Row>
@@ -315,6 +467,8 @@ const ScrapingSchedule = () => {
           </div>
 
           {renderEstadisticas()}
+          {renderErrorModal()}
+          {renderSitiosSinScheduleModal()}
           
           {error && (
             <Alert
