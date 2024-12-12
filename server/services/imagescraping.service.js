@@ -155,7 +155,7 @@ class ImageScrapingService {
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-          model: "GPT-4o",
+          model: "gpt-4o",
           messages: [
             {
               role: "system",
