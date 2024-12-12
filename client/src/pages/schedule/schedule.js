@@ -1,6 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Typography, Spin, message, Empty, Alert, Button, Space } from 'antd';
-import axios from 'axios';
+import { 
+  Table, 
+  Typography, 
+  Spin, 
+  message, 
+  Empty, 
+  Alert, 
+  Button, 
+  Space,
+  Card,
+  Statistic,
+  Badge,
+  Tag,
+  Tooltip,
+  Row,
+  Col,
+  Progress
+} from 'antd';
+import {
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  WarningOutlined,
+  CalendarOutlined,
+  ReloadOutlined,
+  FieldTimeOutlined
+} from '@ant-design/icons';
 import AuthWrapper from '../../components/authwrapper/authwrapper';
 import axios from 'axios';
 import API_URL from '../../config/api';
@@ -174,15 +198,97 @@ const ScrapingSchedule = () => {
     }
   ];
 
-  const getColorByStatus = (status) => {
-    const colors = {
-      red: '#ff4d4f',
-      green: '#52c41a',
-      blue: '#1890ff',
-      default: '#d9d9d9'
+  const getEstado = (record, ahora) => {
+    if (record.bloqueo?.bloqueado) {
+      return { 
+        status: 'error',
+        color: '#ff4d4f',
+        texto: 'Bloqueado'
+      };
+    }
+
+    if (!record.proximaEjecucion) {
+      return {
+        status: 'default',
+        color: '#d9d9d9',
+        texto: 'No programado'
+      };
+    }
+
+    if (record.proximaEjecucion.isBefore(ahora)) {
+      return {
+        status: 'warning',
+        color: '#faad14',
+        texto: 'Vencido'
+      };
+    }
+
+    if (record.proximaEjecucion.isSame(ahora, 'day')) {
+      return {
+        status: 'processing',
+        color: '#1890ff',
+        texto: 'Hoy'
+      };
+    }
+
+    return {
+      status: 'success',
+      color: '#52c41a',
+      texto: 'Próximo'
     };
-    return colors[status] || colors.default;
   };
+
+  const renderEstadisticas = () => (
+    <Row gutter={[16, 16]} className="mb-6">
+      <Col xs={24} sm={12} md={6}>
+        <Card>
+          <Statistic
+            title="Total Schedules"
+            value={estadisticas.total}
+            prefix={<CalendarOutlined />}
+          />
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} md={6}>
+        <Card>
+          <Statistic
+            title="Programados Hoy"
+            value={estadisticas.programadosHoy}
+            prefix={<ClockCircleOutlined />}
+            valueStyle={{ color: '#1890ff' }}
+          />
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} md={6}>
+        <Card>
+          <Statistic
+            title="Schedules con Errores"
+            value={schedule.filter(s => s.intentosFallidos > 0).length}
+            prefix={<WarningOutlined />}
+            suffix={`/ ${estadisticas.total}`}
+            valueStyle={{ color: '#faad14' }}
+          />
+          <Text type="secondary">
+            {schedule.filter(s => s.bloqueo?.bloqueado).length} bloqueados
+          </Text>
+        </Card>
+      </Col>
+      <Col xs={24} sm={12} md={6}>
+        <Card>
+          <Statistic
+            title="Próximo Scraping"
+            value={estadisticas.proximoScraping?.sitio || 'No programado'}
+            prefix={<FieldTimeOutlined />}
+          />
+          {estadisticas.proximoScraping && (
+            <Text type="secondary">
+              {moment(estadisticas.proximoScraping.fecha).fromNow()}
+            </Text>
+          )}
+        </Card>
+      </Col>
+    </Row>
+  );
 
   return (
     <AuthWrapper>
