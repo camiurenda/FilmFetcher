@@ -20,7 +20,7 @@ export const useAuth = () => {
   const handleLogin = () => loginWithRedirect();
   
   const handleLogout = () => {
-    const redirectUri = `${window.location.origin}/callback`;
+    const redirectUri = `${window.location.origin}`;
     console.log('Redirigiendo a:', redirectUri);
     logout({ returnTo: redirectUri });
   };
