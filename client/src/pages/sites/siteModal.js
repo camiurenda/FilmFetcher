@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, Select, Button, Divider, Alert, Space, Checkbox, InputNumber, Row, Col } from 'antd';
+import { Modal, Form, Input, Select, Button, Divider, Space, Checkbox, InputNumber, Row, Col, Collapse, Table, Tag } from 'antd';
 import { SaveOutlined, LoadingOutlined, GlobalOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import ScrapingConfig from '../../components/schedule/scheduleConfig';
 import ScrapingProgressModal from '../../components/Scrap/ScrapingProgressModal';
@@ -9,6 +9,7 @@ import API_URL from '../../config/api';
 import dayjs from 'dayjs';
 
 const { Option } = Select;
+const { Panel } = Collapse;
 
 const SiteModal = ({ 
   visible, 
@@ -32,6 +33,8 @@ const SiteModal = ({
     error: null,
     stats: { total: 0, processed: 0 }
   });
+  const [scrapedProjections, setScrapedProjections] = useState([]);
+  const [isResultModalVisible, setIsResultModalVisible] = useState(false);
 
   useEffect(() => {
     const cargarDatos = async () => {
@@ -91,20 +94,6 @@ const SiteModal = ({
     console.log('🔄 Iniciando handleSubmit con valores:', values);
     
     try {
-      // Si hay scraping inmediato, mostramos el modal antes de cualquier operación
-      if (values.scrapingInmediato) {
-        console.log('🔄 Scraping inmediato detectado, mostrando modal');
-        setScrapingProgress({
-          visible: true,
-          currentStep: 0,
-          status: {
-            initialization: { detail: 'Validando sitio y conexión...' }
-          },
-          error: null,
-          stats: { total: 0, processed: 0 }
-        });
-      }
-
       const transformedValues = { ...values };
       console.log('🔄 Valores transformados:', transformedValues);
 
@@ -113,13 +102,13 @@ const SiteModal = ({
         delete transformedValues.configuraciones;
       } else {
         if (values.configuraciones?.length > 0) {
-          transformedValues.configuraciones = values.configuraciones.map(config => ({
-            ...config,
-            hora: config.hora ? dayjs(config.hora).format('HH:mm') : undefined,
-            descripcion: config.descripcion || '',
-            diasSemana: config.diasSemana || [],
-            diasMes: config.diasMes || []
-          }));
+          transformedValues.configuraciones = [{
+            ...values.configuraciones[0],
+            hora: values.configuraciones[0].hora ? dayjs(values.configuraciones[0].hora).format('HH:mm') : undefined,
+            descripcion: values.configuraciones[0].descripcion || '',
+            diasSemana: values.configuraciones[0].diasSemana || [],
+            diasMes: values.configuraciones[0].diasMes || []
+          }];
         }
       }
 
@@ -134,7 +123,6 @@ const SiteModal = ({
         delete transformedValues.fechas;
       }
 
-      // Guardamos el sitio y obtenemos el ID
       console.log('🔄 Guardando sitio...');
       
       let siteId;
@@ -148,12 +136,19 @@ const SiteModal = ({
         console.log('✅ Nuevo sitio creado con ID:', siteId);
       }
 
-      // Si se solicitó scraping inmediato, monitoreamos el progreso
       if (values.scrapingInmediato) {
-        console.log('🔄 Monitoreando progreso del scraping');
+        console.log('🔄 Iniciando scraping inmediato');
+        setScrapingProgress({
+          visible: true,
+          currentStep: 0,
+          status: {
+            initialization: { detail: 'Validando sitio y conexión...' }
+          },
+          error: null,
+          stats: { total: 0, processed: 0 }
+        });
         
         try {
-          // Paso 1: Extracción
           setScrapingProgress(prev => ({
             ...prev,
             currentStep: 1,
@@ -163,63 +158,68 @@ const SiteModal = ({
             }
           }));
 
-          // Simular espera para el paso de extracción
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          // Llamada al endpoint de scraping inmediato
+          const scrapingResponse = await axios.post(`${API_URL}/api/sites/scrape/${siteId}`);
+          const proyecciones = scrapingResponse.data.data.proyecciones;
 
-          // Paso 2: Procesamiento IA
+          setScrapedProjections(proyecciones);
+
           setScrapingProgress(prev => ({
             ...prev,
             currentStep: 2,
             status: {
               ...prev.status,
               aiProcessing: { detail: 'Procesando con OpenAI...' }
+            },
+            stats: {
+              total: proyecciones.length,
+              processed: 0
             }
           }));
 
-          // Simular espera para el paso de IA
           await new Promise(resolve => setTimeout(resolve, 2000));
 
-          // Paso 3: Enriquecimiento
           setScrapingProgress(prev => ({
             ...prev,
             currentStep: 3,
             status: {
               ...prev.status,
               enrichment: { detail: 'Buscando información adicional...' }
+            },
+            stats: {
+              ...prev.stats,
+              processed: Math.floor(prev.stats.total * 0.5)
             }
           }));
 
-          // Simular espera para el paso de enriquecimiento
           await new Promise(resolve => setTimeout(resolve, 2000));
 
-          // Paso 4: Almacenamiento
           setScrapingProgress(prev => ({
             ...prev,
             currentStep: 4,
             status: {
               ...prev.status,
               storage: { detail: 'Guardando proyecciones...' }
+            },
+            stats: {
+              ...prev.stats,
+              processed: prev.stats.total
             }
           }));
 
-          // Simular espera para el paso de almacenamiento
           await new Promise(resolve => setTimeout(resolve, 2000));
 
-          // Completado
           console.log('✅ Proceso de scraping completado');
           setScrapingProgress(prev => ({
             ...prev,
-            currentStep: 5  // Proceso completo
+            currentStep: 5
           }));
 
-          // Cerrar el modal después de un breve delay
-          console.log('🔄 Cerrando modal y formulario');
+          // Cerrar el modal de progreso
           setTimeout(() => {
-            setScrapingProgress(prev => {
-              console.log('Estado final del modal:', prev);
-              return { ...prev, visible: false };
-            });
-            onCancel();
+            setScrapingProgress(prev => ({ ...prev, visible: false }));
+            // Mostrar el modal de resultados
+            setIsResultModalVisible(true);
           }, 1000);
 
         } catch (error) {
@@ -261,6 +261,77 @@ const SiteModal = ({
     }
   };
 
+  const handleResultModalClose = () => {
+    setIsResultModalVisible(false);
+    onCancel();
+  };
+
+  const columns = [
+    {
+      title: 'Película',
+      dataIndex: 'nombrePelicula',
+      key: 'nombrePelicula',
+    },
+    {
+      title: 'Fecha y Hora',
+      dataIndex: 'fechaHora',
+      key: 'fechaHora',
+      render: (fechaHora) => moment(fechaHora).format('DD/MM/YYYY HH:mm'),
+    },
+    {
+      title: 'Director',
+      dataIndex: 'director',
+      key: 'director',
+    },
+    {
+      title: 'País',
+      key: 'paisOrigen',
+      render: (_, record) => (
+        record.esPeliculaArgentina ? (
+          <Tag color="blue">Argentina 🧉</Tag>
+        ) : (
+          <span>{record.paisOrigen || 'No especificado'}</span>
+        )
+      ),
+    },
+    {
+      title: 'Duración',
+      dataIndex: 'duracion',
+      key: 'duracion',
+      render: (duracion) => `${duracion} min`,
+    },
+    {
+      title: 'Sala',
+      dataIndex: 'sala',
+      key: 'sala',
+    },
+    {
+      title: 'Precio',
+      dataIndex: 'precio',
+      key: 'precio',
+      render: (precio) => `$${precio.toFixed(2)}`,
+    },
+    {
+      title: 'Vigencia',
+      key: 'estado',
+      render: (_, record) => {
+        const ahora = moment();
+        const fechaProyeccion = moment(record.fechaHora);
+        const horasAntes = moment.duration(ahora.diff(fechaProyeccion)).asHours();
+
+        if (process.env.NODE_ENV === 'production' && horasAntes > 0 && horasAntes <= 3) {
+          return <span style={{ color: 'green' }}>Hoy</span>;
+        } else if (fechaProyeccion.isBefore(ahora)) {
+          return <span style={{ color: 'red' }}>Finalizada</span>;
+        } else if (fechaProyeccion.isSame(ahora, 'day')) {
+          return <span style={{ color: 'green' }}>Hoy</span>;
+        } else {
+          return <span style={{ color: 'blue' }}>Próxima</span>;
+        }
+      },
+    }
+  ];
+
   return (
     <>
       <Modal
@@ -297,16 +368,8 @@ const SiteModal = ({
           }}
         >
           <Space direction="vertical" className="w-full" size="large" style={{ width: '100%' }}>
+            <Divider orientation="left">Información básica</Divider>
             <Row gutter={16}>
-              <Col span={24}>
-                <Alert
-                  message="Información básica"
-                  type="info"
-                  showIcon
-                  style={{ marginBottom: '16px' }}
-                />
-              </Col>
-              
               <Col xs={24} sm={24} md={12}>
                 <Form.Item
                   name="nombre"
@@ -348,16 +411,8 @@ const SiteModal = ({
               </Col>
             </Row>
 
+            <Divider orientation="left">Configuración general</Divider>
             <Row gutter={16}>
-              <Col span={24}>
-                <Alert
-                  message="Configuración general"
-                  type="info"
-                  showIcon
-                  style={{ marginBottom: '16px' }}
-                />
-              </Col>
-
               <Col xs={24} sm={24} md={12}>
                 <Form.Item
                   name="tipo"
@@ -440,17 +495,12 @@ const SiteModal = ({
 
             {tipoCarga === 'scraping' && (
               <>
-                <Divider>Configuración de Scraping</Divider>
+                <Divider orientation="left">Configuración de Scraping</Divider>
                 <ScrapingConfig 
                   form={form}
                   initialValues={{
                     tipoFrecuencia: schedule?.tipoFrecuencia,
-                    configuraciones: schedule?.configuraciones?.map(config => ({
-                      ...config,
-                      hora: config.hora ? dayjs(moment(config.hora, 'HH:mm')) : undefined,
-                      diasMes: config.diasMes || [],
-                      diasSemana: config.diasSemana || []
-                    })) || []
+                    configuraciones: schedule?.configuraciones?.length > 0 ? [schedule.configuraciones[0]] : [{}]
                   }}
                 />
               </>
@@ -475,6 +525,24 @@ const SiteModal = ({
         stats={scrapingProgress.stats}
         type="scraping"
       />
+
+      <Modal
+        title="Proyecciones Recuperadas"
+        open={isResultModalVisible}
+        onCancel={handleResultModalClose}
+        width={1000}
+        footer={[
+          <Button key="close" onClick={handleResultModalClose}>
+            Cerrar
+          </Button>
+        ]}
+      >
+        <Table
+          columns={columns}
+          dataSource={scrapedProjections}
+          rowKey={(record) => `${record.nombrePelicula}-${record.fechaHora}`}
+        />
+      </Modal>
     </>
   );
 };

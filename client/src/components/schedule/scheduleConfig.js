@@ -4,31 +4,24 @@ import {
   Select, 
   TimePicker, 
   DatePicker, 
-  Button, 
-  Card, 
   Space,
-  Divider,
-  Checkbox,
   Input,
   InputNumber,
-  Tag,
-  Tabs,
-  Alert,
-  Tooltip
+  Tooltip,
+  Collapse,
+  Checkbox,
+  Card,
+  Button
 } from 'antd';
 import { 
-  PlusOutlined, 
-  DeleteOutlined,
-  InfoCircleOutlined,
-  SaveOutlined,
-  ThunderboltOutlined
+  InfoCircleOutlined
 } from '@ant-design/icons';
-import moment from 'moment';
 import dayjs from 'dayjs';
 
 const { Option } = Select;
 const { RangePicker } = DatePicker;
 const { TextArea } = Input;
+const { Panel } = Collapse;
 
 const createTimeObject = (time) => {
   if (!time) return undefined;
@@ -47,7 +40,6 @@ const createTimeObject = (time) => {
   return undefined;
 };
 
-// Templates reorganizados por frecuencia
 const templates = {
   semanal: {
     diasLaborales: {
@@ -95,7 +87,7 @@ const templates = {
   }
 };
 
-const ScrapingConfig = ({ initialValues = {}, form, onError }) => {
+const ScrapingConfig = ({ initialValues = {}, form }) => {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const tipoFrecuencia = Form.useWatch('tipoFrecuencia', form);
 
@@ -109,12 +101,12 @@ const ScrapingConfig = ({ initialValues = {}, form, onError }) => {
           }]
         });
       } else if (initialValues.configuraciones?.length > 0) {
-        const configuracionesConHoraFormateada = initialValues.configuraciones.map(config => ({
-          ...config,
-          hora: config.hora ? createTimeObject(config.hora) : undefined
-        }));
+        const configuracion = initialValues.configuraciones[0];
         form.setFieldsValue({
-          configuraciones: configuracionesConHoraFormateada
+          configuraciones: [{
+            ...configuracion,
+            hora: configuracion.hora ? createTimeObject(configuracion.hora) : undefined
+          }]
         });
       } else {
         form.setFieldsValue({
@@ -124,7 +116,6 @@ const ScrapingConfig = ({ initialValues = {}, form, onError }) => {
     }
   }, [initialValues, form]);
 
-  // Reset template when frequency changes
   useEffect(() => {
     setSelectedTemplate(null);
   }, [tipoFrecuencia]);
@@ -132,9 +123,8 @@ const ScrapingConfig = ({ initialValues = {}, form, onError }) => {
   const handleTemplateSelect = (templateKey, frecuencia) => {
     setSelectedTemplate(templateKey);
     const templateData = templates[frecuencia][templateKey];
-    
     form.setFieldsValue({
-      configuraciones: templateData.configuraciones
+      configuraciones: [templateData.configuraciones[0]]
     });
   };
 
@@ -149,7 +139,7 @@ const ScrapingConfig = ({ initialValues = {}, form, onError }) => {
     }
 
     return (
-      <Card title="Templates Predefinidos (Opcional)" className="mb-4">
+      <Card title="Templates Predefinidos (Opcional)" className="mb-4" style={{ marginBottom: '32px' }}>
         <Space>
           {Object.entries(currentTemplates).map(([key, template]) => (
             <Button
@@ -165,182 +155,150 @@ const ScrapingConfig = ({ initialValues = {}, form, onError }) => {
     );
   };
 
-  const renderErrorInfo = () => {
-    const error = form.getFieldValue('ultimoError');
-    const bloqueo = form.getFieldValue('bloqueo');
-
-    if (bloqueo?.bloqueado) {
-      return (
-        <Alert
-          message="Schedule Bloqueado"
-          description={`Razón: ${bloqueo.razon}. Bloqueado desde: ${moment(bloqueo.fechaBloqueo).format('DD/MM/YYYY HH:mm')}`}
-          type="error"
-          showIcon
-          className="mb-4"
-        />
-      );
-    }
-
-    if (error?.mensaje) {
-      return (
-        <Alert
-          message="Último Error"
-          description={`${error.mensaje} - ${moment(error.fecha).format('DD/MM/YYYY HH:mm')} (Intentos: ${error.intentos})`}
-          type="warning"
-          showIcon
-          className="mb-4"
-        />
-      );
-    }
-
-    return null;
-  };
-
   return (
     <div className="w-full">
-      {renderErrorInfo()}
       {renderTemplates()}
 
-      <Form.Item
-        name="prioridad"
-        label={
-          <Space>
-            Prioridad
-            <Tooltip title="Mayor prioridad (1-10) se ejecutará primero en caso de colisión">
-              <InfoCircleOutlined />
-            </Tooltip>
-          </Space>
-        }
-        initialValue={1}
-      >
-        <InputNumber min={1} max={10} />
-      </Form.Item>
-
-      <Form.Item
-        name="tags"
-        label="Tags"
-      >
-        <Select mode="tags" placeholder="Agregar tags">
-          <Option value="produccion">Producción</Option>
-          <Option value="testing">Testing</Option>
-          <Option value="desarrollo">Desarrollo</Option>
-        </Select>
-      </Form.Item>
-
       <Form.List name="configuraciones" initialValue={[{}]}>
-        {(fields, { add, remove }) => (
+        {(fields) => (
           <div className="w-full">
-            {fields.map((field, index) => (
-              <Card 
-                key={field.key} 
-                className="mb-4"
-                title={`Configuración ${index + 1}`}
-                extra={
-                  fields.length > 1 && (
-                    <Button 
-                      type="text" 
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => remove(field.name)}
-                    />
-                  )
-                }
-              >
-                <Space direction="vertical" className="w-full" size="large">
+            {fields.slice(0, 1).map(field => (
+              <Space key={field.key} direction="vertical" className="w-full" size="large">
+                <Form.Item
+                  {...field}
+                  name={[field.name, "descripcion"]}
+                  label="Descripción"
+                  style={{ width: '100%' }}
+                >
+                  <TextArea 
+                    rows={2} 
+                    placeholder="Describe el propósito de esta configuración"
+                    maxLength={200}
+                    showCount
+                    style={{ width: '100%', resize: 'vertical' }}
+                  />
+                </Form.Item>
+
+                <Form.Item
+                  {...field}
+                  name={[field.name, "hora"]}
+                  label="Hora de Ejecución"
+                  rules={[{ required: true, message: 'La hora es requerida' }]}
+                  style={{ width: '100%' }}
+                >
+                  <TimePicker 
+                    format="HH:mm"
+                    style={{ width: '100%' }}
+                    defaultValue={dayjs().hour(9).minute(0)}
+                  />
+                </Form.Item>
+
+                {tipoFrecuencia === 'semanal' && (
                   <Form.Item
                     {...field}
-                    name={[field.name, "descripcion"]}
-                    label="Descripción"
+                    name={[field.name, "diasSemana"]}
+                    label="Días de la Semana"
+                    rules={[{ required: true, message: 'Seleccione al menos un día' }]}
+                    style={{ width: '100%' }}
                   >
-                    <TextArea 
-                      rows={2} 
-                      placeholder="Describe el propósito de esta configuración"
-                      maxLength={200}
-                      showCount
-                    />
+                    <Select 
+                      mode="multiple" 
+                      style={{ width: '100%', minWidth: '200px', maxWidth: '100%' }}
+                      dropdownMatchSelectWidth={false}
+                    >
+                      <Option value={0}>Domingo</Option>
+                      <Option value={1}>Lunes</Option>
+                      <Option value={2}>Martes</Option>
+                      <Option value={3}>Miércoles</Option>
+                      <Option value={4}>Jueves</Option>
+                      <Option value={5}>Viernes</Option>
+                      <Option value={6}>Sábado</Option>
+                    </Select>
                   </Form.Item>
+                )}
 
+                {tipoFrecuencia === 'mensual' && (
                   <Form.Item
                     {...field}
-                    name={[field.name, "hora"]}
-                    label="Hora de Ejecución"
-                    rules={[{ required: true, message: 'La hora es requerida' }]}
+                    name={[field.name, "diasMes"]}
+                    label="Días del Mes"
+                    rules={[{ required: true, message: 'Seleccione al menos un día' }]}
+                    style={{ width: '100%' }}
                   >
-                    <TimePicker 
-                      format="HH:mm"
-                      className="w-full"
-                      defaultValue={dayjs().hour(9).minute(0)}
-                    />
+                    <Select 
+                      mode="multiple" 
+                      style={{ width: '100%', minWidth: '200px', maxWidth: '100%' }}
+                      dropdownMatchSelectWidth={false}
+                    >
+                      {[...Array(31)].map((_, i) => (
+                        <Option key={i + 1} value={i + 1}>{i + 1}</Option>
+                      ))}
+                    </Select>
                   </Form.Item>
-
-                  {tipoFrecuencia === 'semanal' && (
-                    <Form.Item
-                      {...field}
-                      name={[field.name, "diasSemana"]}
-                      label="Días de la Semana"
-                      rules={[{ required: true, message: 'Seleccione al menos un día' }]}
-                    >
-                      <Select mode="multiple" className="w-full">
-                        <Option value={0}>Domingo</Option>
-                        <Option value={1}>Lunes</Option>
-                        <Option value={2}>Martes</Option>
-                        <Option value={3}>Miércoles</Option>
-                        <Option value={4}>Jueves</Option>
-                        <Option value={5}>Viernes</Option>
-                        <Option value={6}>Sábado</Option>
-                      </Select>
-                    </Form.Item>
-                  )}
-
-                  {tipoFrecuencia === 'mensual' && (
-                    <Form.Item
-                      {...field}
-                      name={[field.name, "diasMes"]}
-                      label="Días del Mes"
-                      rules={[{ required: true, message: 'Seleccione al menos un día' }]}
-                    >
-                      <Select mode="multiple" className="w-full">
-                        {[...Array(31)].map((_, i) => (
-                          <Option key={i + 1} value={i + 1}>{i + 1}</Option>
-                        ))}
-                      </Select>
-                    </Form.Item>
-                  )}
-                </Space>
-              </Card>
+                )}
+              </Space>
             ))}
-
-            <Button 
-              type="dashed" 
-              onClick={() => add()} 
-              block 
-              icon={<PlusOutlined />}
-            >
-              Agregar Configuración
-            </Button>
           </div>
         )}
       </Form.List>
 
-      <Divider />
+      <Collapse defaultActiveKey={[]} style={{ marginTop: '16px', marginBottom: '16px' }}>
+        <Panel header="Opciones adicionales" key="1">
+          <Space direction="vertical" className="w-full">
+            <Form.Item
+              name="prioridad"
+              label={
+                <Space>
+                  Prioridad
+                  <Tooltip title="Mayor prioridad (1-10) se ejecutará primero en caso de colisión">
+                    <InfoCircleOutlined />
+                  </Tooltip>
+                </Space>
+              }
+              initialValue={1}
+              style={{ width: '100%' }}
+            >
+              <InputNumber min={1} max={10} style={{ width: '100%' }} />
+            </Form.Item>
 
-      <Form.Item
-        name="fechas"
-        label={
-          <Space>
-            Período de Vigencia
-            <Tooltip title="Opcional: Define un período específico para la ejecución del schedule">
-              <InfoCircleOutlined />
-            </Tooltip>
+            <Form.Item
+              name="tags"
+              label="Tags"
+              style={{ width: '100%' }}
+            >
+              <Select 
+                mode="tags" 
+                placeholder="Agregar tags"
+                style={{ width: '100%', minWidth: '200px', maxWidth: '100%' }}
+                dropdownMatchSelectWidth={false}
+              >
+                <Option value="produccion">Producción</Option>
+                <Option value="testing">Testing</Option>
+                <Option value="desarrollo">Desarrollo</Option>
+              </Select>
+            </Form.Item>
+
+            <Form.Item
+              name="fechas"
+              label={
+                <Space>
+                  Período de Vigencia
+                  <Tooltip title="Opcional: Define un período específico para la ejecución del schedule">
+                    <InfoCircleOutlined />
+                  </Tooltip>
+                </Space>
+              }
+              style={{ width: '100%' }}
+            >
+              <RangePicker 
+                showTime
+                format="YYYY-MM-DD HH:mm"
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
           </Space>
-        }
-      >
-        <RangePicker 
-          showTime
-          format="YYYY-MM-DD HH:mm"
-          className="w-full"
-        />
-      </Form.Item>
+        </Panel>
+      </Collapse>
 
       <Form.Item
         name="scrapingInmediato"

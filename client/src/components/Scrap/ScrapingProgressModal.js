@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, Steps, Progress, Space, Typography, Button } from 'antd';
+import { Modal, Steps, Progress, Space, Typography, Button, List } from 'antd';
 import { 
   FileSearchOutlined, 
   CloudUploadOutlined, 
@@ -102,8 +102,8 @@ const ScrapingProgressModal = ({
 
   return (
     <Modal
-    title={`Progreso del ${type === 'image' ? 'Imagen' : type === 'pdf' ? 'PDF' : 'Scraping'}`}
-    open={visible}
+      title={`Progreso del ${type === 'image' ? 'Imagen' : type === 'pdf' ? 'PDF' : 'Scraping'}`}
+      open={visible}
       onCancel={handleClose}
       width={600}
       footer={[
@@ -114,7 +114,7 @@ const ScrapingProgressModal = ({
           danger
         >
           {error || currentStep === steps.length ? 'Cerrar' : 'Cancelar Proceso'}    
-          </Button>
+        </Button>
       ]}
     >
       <Space direction="vertical" size="large" className="w-full">
@@ -145,6 +145,19 @@ const ScrapingProgressModal = ({
                     <Text type="secondary" className="text-xs">
                       {status[Object.keys(status)[index]].detail}
                     </Text>
+                  )}
+                  {/* Mostrar lista de proyecciones en el paso de OpenAI */}
+                  {index === 2 && status.aiProcessing?.proyecciones && (
+                    <List
+                      size="small"
+                      bordered
+                      dataSource={status.aiProcessing.proyecciones}
+                      renderItem={item => (
+                        <List.Item>
+                          <Text>{item.nombre} - {item.fecha} - Sala: {item.sala}</Text>
+                        </List.Item>
+                      )}
+                    />
                   )}
                 </Space>
               }

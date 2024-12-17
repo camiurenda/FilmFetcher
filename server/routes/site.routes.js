@@ -71,8 +71,7 @@ router.post('/add', async (req, res) => {
           prioridad,
           fechaInicio,
           fechaFin,
-          usuarioCreador,
-          scrapingInmediato
+          usuarioCreador
       } = req.body;
 
       if (!nombre || !url || !tipoCarga || !usuarioCreador) {
@@ -125,17 +124,6 @@ router.post('/add', async (req, res) => {
           });
 
           await newSchedule.save();
-
-          if (scrapingInmediato) {
-              console.log(`Iniciando scraping inmediato para el sitio ${savedSite.nombre}`);
-              try {
-                  await ScrapingService.ejecutarScrapingInmediato(savedSite._id);
-                  console.log(`Scraping inmediato completado para ${savedSite.nombre}`);
-              } catch (error) {
-                  console.error(`Error en scraping inmediato para ${savedSite.nombre}:`, error);
-                  // No lanzamos el error para que no afecte la creación del sitio
-              }
-          }
       }
 
       res.status(201).json(savedSite);
@@ -231,8 +219,7 @@ router.put('/:id', async (req, res) => {
       tags: updateData.tags,
       prioridad: updateData.prioridad,
       fechaInicio: updateData.fechaInicio,
-      fechaFin: updateData.fechaFin,
-      scrapingInmediato: updateData.scrapingInmediato
+      fechaFin: updateData.fechaFin
     };
 
     console.log('Datos del schedule:', scheduleData);
@@ -293,15 +280,6 @@ router.put('/:id', async (req, res) => {
           configuraciones: schedule.configuraciones
         });
       }
-      if (scheduleData.scrapingInmediato) {
-        console.log(`Iniciando scraping inmediato para el sitio ${updatedSite.nombre}`);
-        try {
-            await ScrapingService.ejecutarScrapingInmediato(updatedSite._id);
-            console.log(`Scraping inmediato completado para ${updatedSite.nombre}`);
-        } catch (error) {
-            console.error(`Error en scraping inmediato para ${updatedSite.nombre}:`, error);
-        }
-    }
     }
 
     res.status(200).json(updatedSite);
