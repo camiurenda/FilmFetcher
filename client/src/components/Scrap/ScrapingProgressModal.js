@@ -19,17 +19,17 @@ const STEP_CONFIGS = {
   'pdf': {
     icon: FileSearchOutlined,
     title: 'Inicialización',
-    description: 'Validando PDF y sitio...'
+    description: 'Validando archivo y configuración...'
   },
   'image': {
     icon: FileImageOutlined,
     title: 'Inicialización',
-    description: 'Validando imagen y sitio...'
+    description: 'Validando archivo y configuración...'
   },
   'scraping': {
     icon: GlobalOutlined,
     title: 'Inicialización',
-    description: 'Validando sitio y conexión...'
+    description: 'Validando sitio y configuración...'
   }
 };
 
@@ -51,7 +51,7 @@ const ScrapingProgressModal = ({
       {
         icon: CloudUploadOutlined,
         title: 'Extracción',
-        description: type === 'scraping' ? 'Extrayendo contenido del sitio...' : `Extrayendo contenido del ${type}...`
+        description: 'Extrayendo información...'
       },
       {
         icon: RobotOutlined,
@@ -87,6 +87,15 @@ const ScrapingProgressModal = ({
     return <Icon />;
   };
 
+  const getModalTitle = () => {
+    const titles = {
+      'pdf': 'Procesamiento de PDF',
+      'image': 'Procesamiento de Imagen',
+      'scraping': 'Procesamiento de Sitio Web'
+    };
+    return titles[type] || 'Procesamiento';
+  };
+
   const steps = Array(5).fill(null).map((_, index) => getStepConfig(index));
   React.useEffect(() => {
     if (currentStep === steps.length && !error) {
@@ -102,7 +111,7 @@ const ScrapingProgressModal = ({
 
   return (
     <Modal
-      title={`Progreso del ${type === 'image' ? 'Imagen' : type === 'pdf' ? 'PDF' : 'Scraping'}`}
+      title={getModalTitle()}
       open={visible}
       onCancel={handleClose}
       width={600}
