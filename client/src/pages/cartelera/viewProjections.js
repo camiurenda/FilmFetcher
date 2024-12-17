@@ -525,8 +525,12 @@ const ViewProjections = () => {
               {mostrarAnteriores ? 'Ver Proyecciones Actuales' : 'Ver Proyecciones Anteriores'}
             </Button>
             <Button
-              type={mostrarSoloArgentinas ? "default" : "primary"}
+              type="primary"
               onClick={handleToggleArgentinas}
+              style={{
+                background: '#1890ff',
+                borderColor: '#1890ff'
+              }}
             >
               {mostrarSoloArgentinas ? 'Ver Todas' : 'Cine Argentino 🧉'}
             </Button>

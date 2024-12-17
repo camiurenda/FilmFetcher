@@ -176,6 +176,13 @@ const ViewSite = () => {
       title: 'Frecuencia de Actualización',
       dataIndex: 'frecuenciaActualizacion',
       key: 'frecuenciaActualizacion',
+      render: (frecuenciaActualizacion, record) => {
+        return record.tipoCarga === 'manual' ? (
+          <Tag color="green">MANUAL</Tag>
+        ) : (
+          frecuenciaActualizacion
+        );
+      },
     },
     {
       title: 'Activo',
