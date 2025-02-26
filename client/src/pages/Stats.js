@@ -29,10 +29,10 @@ const DashboardStats = () => {
   }, []);
 
   const cardStyle = {
-    background: 'linear-gradient(145deg, #1f1f1f 0%, #262626 100%)',
-    borderRadius: '16px',
+    background: '#1a1a1a',
+    borderRadius: '8px',
     border: '1px solid #303030',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
     height: '100%',
     transition: 'all 0.3s ease',
     overflow: 'hidden',
@@ -44,9 +44,9 @@ const DashboardStats = () => {
     justifyContent: 'center',
     alignItems: 'center',
     height: '300px',
-    background: 'linear-gradient(145deg, #1f1f1f 0%, #262626 100%)',
-    borderRadius: '16px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.2)'
+    background: '#1a1a1a',
+    borderRadius: '8px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
   };
 
   if (loading) return (
@@ -104,115 +104,124 @@ const DashboardStats = () => {
     }
   };
 
-  const iconStyle = (color = '#4096ff') => ({
-    fontSize: '28px',
-    background: `linear-gradient(45deg, ${color} 0%, ${color}cc 100%)`,
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    transition: 'all 0.3s ease',
-    marginRight: '12px'
-  });
+  const iconStyle = {
+    fontSize: '22px',
+    marginRight: '10px',
+    color: '#1890ff'
+  };
 
   const statCards = [
     { 
       title: 'Sitios Agregados',
       value: stats.sitiosAgregados || 0,
-      icon: <DatabaseOutlined style={iconStyle('#4096ff')} />,
-      color: '#4096ff'
+      icon: <DatabaseOutlined style={iconStyle} />,
+      subtitle: 'Sitios monitoreados en la plataforma'
     },
     {
       title: 'Funciones Encontradas',
       value: stats.funcionesScrapeadas || 0,
-      icon: <ProjectOutlined style={iconStyle('#40a9ff')} />,
-      color: '#40a9ff'
+      icon: <ProjectOutlined style={iconStyle} />,
+      subtitle: 'Funciones disponibles en total'
     },
     {
       title: 'Películas Argentinas',
       value: stats.peliculasArgentinas || 0,
-      icon: <CrownOutlined style={iconStyle('#36cfc9')} />,
-      color: '#36cfc9'
+      icon: <CrownOutlined style={iconStyle} />,
+      subtitle: 'Películas de origen argentino'
     },
     {
       title: 'Película Más Programada',
       value: stats.peliculaTopFunciones || 'No hay datos',
-      icon: <CheckCircleOutlined style={iconStyle('#73d13d')} />,
-      color: '#73d13d'
+      icon: <CheckCircleOutlined style={iconStyle} />,
+      subtitle: 'Más exhibida en cartelera'
     },
     {
       title: 'Próximo Scraping',
       value: formatearProximoScraping(stats.proximoScraping),
-      icon: <ClockCircleOutlined style={iconStyle('#ffd666')} />,
-      color: '#ffd666'
+      icon: <ClockCircleOutlined style={iconStyle} />,
+      subtitle: 'En 1 hora'
     },
     {
       title: 'Último Scraping Exitoso',
       value: formatearUltimoScraping(stats.ultimoScrapingExitoso),
-      icon: <CheckCircleOutlined style={iconStyle('#95de64')} />,
-      color: '#95de64'
+      icon: <CheckCircleOutlined style={iconStyle} />,
+      subtitle: 'Última vez que se completó correctamente'
     },
     {
       title: 'Tasa de Éxito de Scraping',
       value: `${stats.tasaExitoScraping || 0}%`,
-      icon: <PercentageOutlined style={iconStyle('#ff7a45')} />,
-      color: '#ff7a45'
+      icon: <PercentageOutlined style={iconStyle} />,
+      subtitle: 'Porcentaje de operaciones exitosas'
     },
     {
       title: 'Sitio Más Activo',
       value: stats.sitioMasActivo || 'No disponible',
-      icon: <CrownOutlined style={iconStyle('#ffc53d')} />,
-      color: '#ffc53d'
+      icon: <CrownOutlined style={iconStyle} />,
+      subtitle: 'Con mayor cantidad de funciones'
     }
   ];
 
   return (
     <div style={{ width: '100%' }}>
-      <Row gutter={[24, 24]} style={{ margin: 0 }}>
+      <Row gutter={[16, 16]} style={{ margin: 0 }}>
         {statCards.map((stat, index) => (
           <Col xs={24} sm={12} lg={8} key={index} style={{ 
             padding: '12px',
             animation: `fadeIn 0.3s ease forwards ${index * 0.1}s`
           }}>
             <Card 
-              style={{
-                ...cardStyle,
-                '&:hover': {
-                  transform: 'translateY(-5px)',
-                  boxShadow: `0 8px 30px ${stat.color}15`
-                }
-              }}
-              hoverable 
+              style={cardStyle}
               bodyStyle={{ 
-                padding: '24px',
-                transition: 'all 0.3s ease',
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center'
+                padding: '16px',
+                height: '100%'
               }}
             >
-              <Statistic
-                title={
-                  <div style={{ 
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+                  {stat.icon}
+                  <span style={{ 
                     color: '#e6e6e6', 
-                    fontSize: '16px', 
-                    marginBottom: '16px',
-                    fontWeight: '500',
-                    letterSpacing: '0.5px'
+                    fontSize: '16px',
+                    fontWeight: '500'
                   }}>
                     {stat.title}
+                  </span>
+                </div>
+                <div style={{ 
+                  fontSize: '28px', 
+                  fontWeight: 'bold', 
+                  color: '#fff',
+                  marginBottom: '8px',
+                  marginLeft: '32px'
+                }}>
+                  {stat.value}
+                </div>
+                <div style={{ 
+                  fontSize: '14px', 
+                  color: '#8c8c8c',
+                  marginLeft: '32px' 
+                }}>
+                  {stat.subtitle}
+                </div>
+                {stat.title === 'Tasa de Éxito de Scraping' && (
+                  <div style={{
+                    position: 'relative',
+                    width: '80px',
+                    height: '80px',
+                    float: 'right',
+                    marginTop: '-80px'
+                  }}>
+                    <div style={{
+                      position: 'absolute',
+                      width: '80px',
+                      height: '80px',
+                      borderRadius: '50%',
+                      background: `radial-gradient(closest-side, #1a1a1a 79%, transparent 80% 100%),
+                                  conic-gradient(#1890ff ${stats.tasaExitoScraping || 0}%, #333 0)`
+                    }}></div>
                   </div>
-                }
-                value={stat.value}
-                valueStyle={{ 
-                  color: '#ffffff', 
-                  fontSize: '26px',
-                  fontWeight: '600',
-                  background: `linear-gradient(45deg, #ffffff 30%, ${stat.color} 90%)`,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent'
-                }}
-                prefix={stat.icon}
-              />
+                )}
+              </div>
             </Card>
           </Col>
         ))}
