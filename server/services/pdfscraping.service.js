@@ -183,7 +183,7 @@ Si un campo no está disponible:
 
 Si el PDF indica un rango de fechas:
 - Genera una entrada por cada día del período para cada película
-- Usa el año actual (2024) si no se especifica
+- Usa el año actual (2025) si no se especifica
 
 Si el PDF TIENE TITULO:
 - Ayudate con el para saber a que MES corresponde

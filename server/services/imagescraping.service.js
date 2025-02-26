@@ -129,7 +129,7 @@ class ImageScrapingService {
     
     Si la imagen indica un rango de fechas (ej: "Programación válida del 20/12 al 27/12"):
     - Genera una entrada por cada día del período para cada película y horario
-    - Usa el año actual (2024) si no se especifica
+    - Usa el año actual (2025) si no se especifica
     
     FORMATO JSON REQUERIDO:
     {

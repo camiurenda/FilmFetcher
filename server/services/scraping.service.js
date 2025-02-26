@@ -332,7 +332,7 @@ class ScrapingService {
         Reglas:
         - Usa "No especificado" para texto faltante
         - Usa 0 para números faltantes
-        - Asume que es el 2024 si no hay año
+        - Asume que es el 2025 si no hay año
         - Crea entrada separada por cada horario
         - SIN texto adicional, SOLO JSON válido.
         - Todo el contenido en PROPERCASE. NO INSERTES TITULOS EN MAYUSCULAS.`;
