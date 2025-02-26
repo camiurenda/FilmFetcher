@@ -28,17 +28,59 @@ const DashboardStats = () => {
     fetchStats();
   }, []);
 
-  if (loading) return <div className="flex justify-center items-center h-64"><Spin size="large" /></div>;
-  if (error) return <Alert message="Error" description={error} type="error" showIcon />;
-  if (!stats) return <Alert message="No hay datos disponibles" type="warning" showIcon />;
-
   const cardStyle = {
-    background: '#1f1f1f',
-    borderRadius: '12px',
+    background: 'linear-gradient(145deg, #1f1f1f 0%, #262626 100%)',
+    borderRadius: '16px',
     border: '1px solid #303030',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-    height: '100%'
+    boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+    height: '100%',
+    transition: 'all 0.3s ease',
+    overflow: 'hidden',
+    position: 'relative'
   };
+
+  const loadingContainerStyle = {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '300px',
+    background: 'linear-gradient(145deg, #1f1f1f 0%, #262626 100%)',
+    borderRadius: '16px',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.2)'
+  };
+
+  if (loading) return (
+    <div style={loadingContainerStyle}>
+      <Spin size="large" />
+    </div>
+  );
+  
+  if (error) return (
+    <Alert 
+      message="Error" 
+      description={error} 
+      type="error" 
+      showIcon 
+      style={{
+        background: '#2a1215',
+        border: '1px solid #5c1d24',
+        borderRadius: '8px'
+      }}
+    />
+  );
+  
+  if (!stats) return (
+    <Alert 
+      message="No hay datos disponibles" 
+      type="warning" 
+      showIcon 
+      style={{
+        background: '#2b2111',
+        border: '1px solid #594214',
+        borderRadius: '8px'
+      }}
+    />
+  );
 
   const formatearProximoScraping = (proximoScraping) => {
     if (!proximoScraping || !proximoScraping.fecha) return 'No programado';
@@ -62,46 +104,63 @@ const DashboardStats = () => {
     }
   };
 
+  const iconStyle = (color = '#4096ff') => ({
+    fontSize: '28px',
+    background: `linear-gradient(45deg, ${color} 0%, ${color}cc 100%)`,
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    transition: 'all 0.3s ease',
+    marginRight: '12px'
+  });
+
   const statCards = [
     { 
       title: 'Sitios Agregados',
       value: stats.sitiosAgregados || 0,
-      icon: <DatabaseOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+      icon: <DatabaseOutlined style={iconStyle('#4096ff')} />,
+      color: '#4096ff'
     },
     {
       title: 'Funciones Encontradas',
       value: stats.funcionesScrapeadas || 0,
-      icon: <ProjectOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+      icon: <ProjectOutlined style={iconStyle('#40a9ff')} />,
+      color: '#40a9ff'
     },
     {
       title: 'Películas Argentinas',
       value: stats.peliculasArgentinas || 0,
-      icon: <CrownOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+      icon: <CrownOutlined style={iconStyle('#36cfc9')} />,
+      color: '#36cfc9'
     },
     {
       title: 'Película Más Programada',
       value: stats.peliculaTopFunciones || 'No hay datos',
-      icon: <CheckCircleOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+      icon: <CheckCircleOutlined style={iconStyle('#73d13d')} />,
+      color: '#73d13d'
     },
     {
       title: 'Próximo Scraping',
       value: formatearProximoScraping(stats.proximoScraping),
-      icon: <ClockCircleOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+      icon: <ClockCircleOutlined style={iconStyle('#ffd666')} />,
+      color: '#ffd666'
     },
     {
       title: 'Último Scraping Exitoso',
       value: formatearUltimoScraping(stats.ultimoScrapingExitoso),
-      icon: <CheckCircleOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+      icon: <CheckCircleOutlined style={iconStyle('#95de64')} />,
+      color: '#95de64'
     },
     {
       title: 'Tasa de Éxito de Scraping',
       value: `${stats.tasaExitoScraping || 0}%`,
-      icon: <PercentageOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+      icon: <PercentageOutlined style={iconStyle('#ff7a45')} />,
+      color: '#ff7a45'
     },
     {
       title: 'Sitio Más Activo',
       value: stats.sitioMasActivo || 'No disponible',
-      icon: <CrownOutlined style={{ fontSize: '24px', color: '#4096ff' }} />
+      icon: <CrownOutlined style={iconStyle('#ffc53d')} />,
+      color: '#ffc53d'
     }
   ];
 
@@ -109,22 +168,69 @@ const DashboardStats = () => {
     <div style={{ width: '100%' }}>
       <Row gutter={[24, 24]} style={{ margin: 0 }}>
         {statCards.map((stat, index) => (
-          <Col xs={24} sm={12} lg={8} key={index} style={{ padding: '12px' }}>
-            <Card style={cardStyle} hoverable bodyStyle={{ padding: '24px' }}>
+          <Col xs={24} sm={12} lg={8} key={index} style={{ 
+            padding: '12px',
+            animation: `fadeIn 0.3s ease forwards ${index * 0.1}s`
+          }}>
+            <Card 
+              style={{
+                ...cardStyle,
+                '&:hover': {
+                  transform: 'translateY(-5px)',
+                  boxShadow: `0 8px 30px ${stat.color}15`
+                }
+              }}
+              hoverable 
+              bodyStyle={{ 
+                padding: '24px',
+                transition: 'all 0.3s ease',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center'
+              }}
+            >
               <Statistic
                 title={
-                  <div style={{ color: '#e6e6e6', fontSize: '14px', marginBottom: '16px' }}>
+                  <div style={{ 
+                    color: '#e6e6e6', 
+                    fontSize: '16px', 
+                    marginBottom: '16px',
+                    fontWeight: '500',
+                    letterSpacing: '0.5px'
+                  }}>
                     {stat.title}
                   </div>
                 }
                 value={stat.value}
-                valueStyle={{ color: '#ffffff', fontSize: '24px' }}
+                valueStyle={{ 
+                  color: '#ffffff', 
+                  fontSize: '26px',
+                  fontWeight: '600',
+                  background: `linear-gradient(45deg, #ffffff 30%, ${stat.color} 90%)`,
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent'
+                }}
                 prefix={stat.icon}
               />
             </Card>
           </Col>
         ))}
       </Row>
+      <style>
+        {`
+          @keyframes fadeIn {
+            from {
+              opacity: 0;
+              transform: translateY(20px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+        `}
+      </style>
     </div>
   );
 };
